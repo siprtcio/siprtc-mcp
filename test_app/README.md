@@ -1,6 +1,6 @@
 # Siprtc MCP Test App (LangChain)
 
-This is a small test agent that connects to the `siprtc-mcp` server over HTTP (Streamable HTTP transport) and calls a tool.
+This is a small test agent using Deep Agents that connects to the `siprtc-mcp` server over HTTP (Streamable HTTP transport) and calls a tool.
 
 ## Setup
 
@@ -32,6 +32,10 @@ OPENAI_API_KEY=your_openai_key
 ```bash
 export MCP_SERVER_URL="http://localhost:8000/mcp"
 python test_app/run_agent.py
+
+## Deep Agents
+
+The agent is created via `deepagents.create_deep_agent` and uses a single tool `siprtc_tool` that forwards calls to the MCP server.
 ```
 
 ## Notes
