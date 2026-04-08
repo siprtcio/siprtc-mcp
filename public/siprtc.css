@@ -1,0 +1,22 @@
+:root {
+  --siprtc-blue: #0a5bd3;
+  --siprtc-blue-dark: #0a3f8c;
+  --siprtc-slate: #0f172a;
+}
+
+header img {
+  border-radius: 6px;
+}
+
+.cl-header-title {
+  color: var(--siprtc-blue-dark);
+  letter-spacing: 0.2px;
+}
+
+.cl-header-description {
+  color: var(--siprtc-slate);
+}
+
+.cl-message[data-siprtc-hidden="true"] {
+  display: none !important;
+}

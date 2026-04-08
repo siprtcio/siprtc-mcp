@@ -65,13 +65,28 @@ docker run --rm \\
 
 ## Docker Compose (MCP + test app)
 
-If you have a `test_app/.env` with `SIPRTC_AUTH_ID`, `SIPRTC_AUTH_SECRET`, and `OPENAI_API_KEY`:
+If you have a `test_app/.env` with `SIPRTC_AUTH_ID`, `SIPRTC_AUTH_SECRET`, and `OPENAI_API_KEY`, you can run the MCP server and the Chainlit UI together:
 
 ```bash
-docker compose up --build
+docker compose up --build -d
 ```
 
-## Run
+The UI is available at:
+
+- `http://localhost:8501` (Chainlit UI)
+- `http://localhost:8000/mcp` (MCP HTTP endpoint)
+
+Note: The Chainlit UI does not prompt for API keys. It uses backend environment variables.
+
+## Test App (CLI)
+
+You can run the test app directly inside the container:
+
+```bash
+docker compose run --rm test-app python -m test_app.run_agent
+```
+
+## Run MCP Server
 
 ```bash
 siprtc-mcp

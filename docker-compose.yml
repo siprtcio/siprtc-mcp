@@ -24,3 +24,5 @@ services:
       MCP_SERVER_URL: http://siprtc-mcp:8000/mcp
     env_file:
       - ./test_app/.env
+    ports:
+      - "8501:8501"

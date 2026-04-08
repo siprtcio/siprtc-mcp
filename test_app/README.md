@@ -1,6 +1,6 @@
-# Siprtc MCP Test App (LangChain)
+# Siprtc MCP Test App (Chainlit UI)
 
-This is a small test agent using Deep Agents that connects to the `siprtc-mcp` server over HTTP (Streamable HTTP transport) and calls a tool.
+This is a small test agent using Deep Agents that connects to the `siprtc-mcp` server over HTTP (Streamable HTTP transport). It includes a Chainlit UI branded for Siprtc so you can test it from a browser.
 
 ## Setup
 
@@ -32,6 +32,13 @@ OPENAI_API_KEY=your_openai_key
 ```bash
 export MCP_SERVER_URL="http://localhost:8000/mcp"
 python test_app/run_agent.py
+```
+
+## Chainlit UI
+
+```bash
+chainlit run test_app/chainlit_app.py --host 0.0.0.0 --port 8501
+```
 
 ## Deep Agents
 
@@ -40,5 +47,5 @@ The agent is created via `deepagents.create_deep_agent` and uses a single tool `
 
 ## Notes
 
-- The MCP server is launched by the script using the `siprtc-mcp` command via stdio transport.
-- If you prefer a different model, change the model string in `test_app/run_agent.py`.
+- If you prefer a different model, change `DEEP_AGENT_MODEL`.
+- The Chainlit UI welcomes users with Siprtc branding.
