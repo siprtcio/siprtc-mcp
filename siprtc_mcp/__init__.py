@@ -1,0 +1,1 @@
+"""Siprtc MCP server package."""

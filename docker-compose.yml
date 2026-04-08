@@ -1,0 +1,26 @@
+services:
+  siprtc-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: siprtc-mcp:latest
+    environment:
+      MCP_TRANSPORT: http
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 8000
+      MCP_PATH: /mcp
+    env_file:
+      - ./test_app/.env
+    ports:
+      - "8000:8000"
+
+  test-app:
+    build:
+      context: .
+      dockerfile: test_app/Dockerfile
+    depends_on:
+      - siprtc-mcp
+    environment:
+      MCP_SERVER_URL: http://siprtc-mcp:8000/mcp
+    env_file:
+      - ./test_app/.env
