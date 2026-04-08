@@ -74,6 +74,7 @@ docker compose up --build -d
 The UI is available at:
 
 - `http://localhost:8501` (Chainlit UI)
+<img width="1464" height="740" alt="Screenshot 2026-04-08 at 8 50 50 AM" src="https://github.com/user-attachments/assets/f8561a54-3c5d-4ce0-a400-b775c7e74a6b" />
 - `http://localhost:8000/mcp` (MCP HTTP endpoint)
 
 Note: The Chainlit UI does not prompt for API keys. It uses backend environment variables.
