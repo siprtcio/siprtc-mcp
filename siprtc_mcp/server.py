@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
 from .client import SiprtcClient
 from .config import SESSION, resolve_auth
@@ -10,16 +10,7 @@ from .tools import applications, domains, messages, phone_numbers, sip_users, vo
 
 
 def create_server() -> FastMCP:
-    host = os.getenv("MCP_HOST", "127.0.0.1")
-    port = int(os.getenv("MCP_PORT", "8000"))
-    streamable_http_path = os.getenv("MCP_PATH", "/mcp")
-
-    mcp = FastMCP(
-        "siprtc",
-        host=host,
-        port=port,
-        streamable_http_path=streamable_http_path,
-    )
+    mcp = FastMCP("siprtc")
 
     def client_factory(auth_id: str | None, auth_secret: str | None) -> SiprtcClient:
         resolved_id, resolved_secret = resolve_auth(auth_id, auth_secret)
@@ -57,7 +48,10 @@ def main() -> None:
     mcp = create_server()
     transport = os.getenv("MCP_TRANSPORT", "stdio")
     if transport == "http":
-        mcp.run(transport="streamable-http")
+        host = os.getenv("MCP_HOST", "127.0.0.1")
+        port = int(os.getenv("MCP_PORT", "8000"))
+        path = os.getenv("MCP_PATH", "/mcp")
+        mcp.run(transport="http", host=host, port=port, path=path)
     else:
         mcp.run()
 
