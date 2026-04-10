@@ -24,8 +24,6 @@ def register(mcp, client_factory):
     def list_phone_numbers(
         params: dict | None = None,
         endpoint_path: str | None = None,
-        auth_id: str | None = None,
-        auth_secret: str | None = None,
     ) -> Any:
         """
         List purchased phone numbers.
@@ -33,10 +31,8 @@ def register(mcp, client_factory):
         Args:
           params: Optional query parameters for filtering or pagination.
           endpoint_path: Optional override path (relative to base URL).
-          auth_id: Optional Siprtc auth ID (overrides env/session).
-          auth_secret: Optional Siprtc auth secret (overrides env/session).
         """
-        client: SiprtcClient = client_factory(auth_id, auth_secret)
+        client: SiprtcClient = client_factory()
         template = endpoint_path or phone_numbers_list_path()
         path = format_path(template, auth_id=client.auth_id)
         return client.request("GET", path, params=params)
@@ -52,8 +48,6 @@ def register(mcp, client_factory):
         phone_number: str,
         endpoint_path: str | None = None,
         payload: dict | None = None,
-        auth_id: str | None = None,
-        auth_secret: str | None = None,
     ) -> Any:
         """
         Buy a phone number.
@@ -62,10 +56,8 @@ def register(mcp, client_factory):
           phone_number: Phone number to purchase.
           endpoint_path: Optional override path (relative to base URL).
           payload: Optional JSON body if required by the API.
-          auth_id: Optional Siprtc auth ID (overrides env/session).
-          auth_secret: Optional Siprtc auth secret (overrides env/session).
         """
-        client: SiprtcClient = client_factory(auth_id, auth_secret)
+        client: SiprtcClient = client_factory()
         template = endpoint_path or phone_numbers_buy_path()
         path = format_path(template, auth_id=client.auth_id, phone_number=phone_number)
         return client.request("POST", path, json=payload)
@@ -81,8 +73,6 @@ def register(mcp, client_factory):
         phone_number: str,
         endpoint_path: str | None = None,
         payload: dict | None = None,
-        auth_id: str | None = None,
-        auth_secret: str | None = None,
     ) -> Any:
         """
         Release a phone number.
@@ -91,10 +81,8 @@ def register(mcp, client_factory):
           phone_number: Phone number to release (E.164 without +, e.g., 15677654321).
           endpoint_path: Optional override path (relative to base URL).
           payload: Optional JSON body if the API requires it.
-          auth_id: Optional Siprtc auth ID (overrides env/session).
-          auth_secret: Optional Siprtc auth secret (overrides env/session).
         """
-        client: SiprtcClient = client_factory(auth_id, auth_secret)
+        client: SiprtcClient = client_factory()
         template = endpoint_path or phone_numbers_release_path()
         path = format_path(template, auth_id=client.auth_id, phone_number=phone_number)
         return client.request("DELETE", path, json=payload)
@@ -106,10 +94,8 @@ def register(mcp, client_factory):
     def get_phone_number(
         phone_number: str,
         endpoint_path: str | None = None,
-        auth_id: str | None = None,
-        auth_secret: str | None = None,
     ) -> Any:
-        client: SiprtcClient = client_factory(auth_id, auth_secret)
+        client: SiprtcClient = client_factory()
         template = endpoint_path or phone_numbers_get_path()
         path = format_path(template, auth_id=client.auth_id, phone_number=phone_number)
         return client.request("GET", path)
@@ -125,10 +111,8 @@ def register(mcp, client_factory):
         country_code: str,
         phone_type: str,
         endpoint_path: str | None = None,
-        auth_id: str | None = None,
-        auth_secret: str | None = None,
     ) -> Any:
-        client: SiprtcClient = client_factory(auth_id, auth_secret)
+        client: SiprtcClient = client_factory()
         template = endpoint_path or phone_numbers_available_path()
         path = format_path(
             template, auth_id=client.auth_id, country_code=country_code, phone_type=phone_type
@@ -146,10 +130,8 @@ def register(mcp, client_factory):
         phone_number: str,
         payload: dict,
         endpoint_path: str | None = None,
-        auth_id: str | None = None,
-        auth_secret: str | None = None,
     ) -> Any:
-        client: SiprtcClient = client_factory(auth_id, auth_secret)
+        client: SiprtcClient = client_factory()
         template = endpoint_path or phone_numbers_associate_path()
         path = format_path(template, auth_id=client.auth_id, phone_number=phone_number)
         return client.request("PATCH", path, json=payload)
