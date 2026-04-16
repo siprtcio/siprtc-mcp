@@ -14,10 +14,8 @@ def register(mcp, client_factory):
     def list_domains(
         params: dict | None = None,
         endpoint_path: str | None = None,
-        auth_id: str | None = None,
-        auth_secret: str | None = None,
     ) -> Any:
-        client: SiprtcClient = client_factory(auth_id, auth_secret)
+        client: SiprtcClient = client_factory()
         template = endpoint_path or domains_path()
         path = format_path(template, auth_id=client.auth_id)
         return client.request("GET", path, params=params)
@@ -29,10 +27,8 @@ def register(mcp, client_factory):
     def create_domain(
         payload: dict,
         endpoint_path: str | None = None,
-        auth_id: str | None = None,
-        auth_secret: str | None = None,
     ) -> Any:
-        client: SiprtcClient = client_factory(auth_id, auth_secret)
+        client: SiprtcClient = client_factory()
         template = endpoint_path or domains_path()
         path = format_path(template, auth_id=client.auth_id)
         return client.request("POST", path, json=payload)
@@ -44,10 +40,8 @@ def register(mcp, client_factory):
     def get_domain(
         domain_id: str,
         endpoint_path: str | None = None,
-        auth_id: str | None = None,
-        auth_secret: str | None = None,
     ) -> Any:
-        client: SiprtcClient = client_factory(auth_id, auth_secret)
+        client: SiprtcClient = client_factory()
         template = endpoint_path or domain_path()
         path = format_path(template, auth_id=client.auth_id, domain_id=domain_id)
         return client.request("GET", path)
@@ -63,10 +57,8 @@ def register(mcp, client_factory):
         payload: dict,
         method: str = "PUT",
         endpoint_path: str | None = None,
-        auth_id: str | None = None,
-        auth_secret: str | None = None,
     ) -> Any:
-        client: SiprtcClient = client_factory(auth_id, auth_secret)
+        client: SiprtcClient = client_factory()
         template = endpoint_path or domain_path()
         path = format_path(template, auth_id=client.auth_id, domain_id=domain_id)
         return client.request(method.upper(), path, json=payload)
@@ -78,10 +70,8 @@ def register(mcp, client_factory):
     def delete_domain(
         domain_id: str,
         endpoint_path: str | None = None,
-        auth_id: str | None = None,
-        auth_secret: str | None = None,
     ) -> Any:
-        client: SiprtcClient = client_factory(auth_id, auth_secret)
+        client: SiprtcClient = client_factory()
         template = endpoint_path or domain_path()
         path = format_path(template, auth_id=client.auth_id, domain_id=domain_id)
         return client.request("DELETE", path)

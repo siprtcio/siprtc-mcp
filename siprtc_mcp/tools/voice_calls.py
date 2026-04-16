@@ -10,24 +10,18 @@ def register(mcp, client_factory):
     @mcp.tool(
         name="siprtc.make_call",
         description=(
-            "Create an outbound voice call. Provide a CallRequest payload and optional auth credentials. "
+            "Create an outbound voice call. Provide a CallRequest payload. "
             "Returns the Siprtc call response with request_id and status."
         ),
     )
-    def make_call(
-        call: CallRequest,
-        auth_id: str | None = None,
-        auth_secret: str | None = None,
-    ) -> Any:
+    def make_call(call: CallRequest) -> Any:
         """
         Create an outbound call.
 
         Args:
           call: Call request payload.
-          auth_id: Optional Siprtc auth ID (overrides env/session).
-          auth_secret: Optional Siprtc auth secret (overrides env/session).
         """
-        client: SiprtcClient = client_factory(auth_id, auth_secret)
+        client: SiprtcClient = client_factory()
         path = format_path("/Accounts/{auth_id}/Calls", auth_id=client.auth_id)
         return client.request("POST", path, json=call.model_dump(by_alias=True, exclude_none=True))
 
@@ -38,20 +32,14 @@ def register(mcp, client_factory):
             "Returns the CDR payload or plain text if the API returns non-JSON."
         ),
     )
-    def get_call(
-        call_id: str,
-        auth_id: str | None = None,
-        auth_secret: str | None = None,
-    ) -> Any:
+    def get_call(call_id: str) -> Any:
         """
         Get call detail record by call ID.
 
         Args:
           call_id: Call SID returned from siprtc.make_call.
-          auth_id: Optional Siprtc auth ID (overrides env/session).
-          auth_secret: Optional Siprtc auth secret (overrides env/session).
         """
-        client: SiprtcClient = client_factory(auth_id, auth_secret)
+        client: SiprtcClient = client_factory()
         path = format_path("/Accounts/{auth_id}/Calls/{call_id}", auth_id=client.auth_id, call_id=call_id)
         return client.request("GET", path)
 
@@ -62,19 +50,13 @@ def register(mcp, client_factory):
             "Returns the API response or plain text if the API returns non-JSON."
         ),
     )
-    def hangup_call(
-        call_id: str,
-        auth_id: str | None = None,
-        auth_secret: str | None = None,
-    ) -> Any:
+    def hangup_call(call_id: str) -> Any:
         """
         Hang up an in-progress call.
 
         Args:
           call_id: Call SID returned from siprtc.make_call.
-          auth_id: Optional Siprtc auth ID (overrides env/session).
-          auth_secret: Optional Siprtc auth secret (overrides env/session).
         """
-        client: SiprtcClient = client_factory(auth_id, auth_secret)
+        client: SiprtcClient = client_factory()
         path = format_path("/Accounts/{auth_id}/Calls/{call_id}", auth_id=client.auth_id, call_id=call_id)
         return client.request("DELETE", path)

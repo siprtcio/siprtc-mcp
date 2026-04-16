@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
 
 DEFAULT_BASE_URL = "https://api.siprtc.io/v1"
 
@@ -36,19 +35,6 @@ DEFAULT_APPLICATIONS_PATH = "/Accounts/{auth_id}/Applications"
 DEFAULT_APPLICATION_PATH = "/Accounts/{auth_id}/Applications/{application_sid}"
 
 
-@dataclass
-class SessionConfig:
-    auth_id: str | None = None
-    auth_secret: str | None = None
-
-    def set_credentials(self, auth_id: str, auth_secret: str) -> None:
-        self.auth_id = auth_id
-        self.auth_secret = auth_secret
-
-
-SESSION = SessionConfig()
-
-
 def env_or_default(env_name: str, default: str) -> str:
     value = os.getenv(env_name)
     return value.strip() if value else default
@@ -58,16 +44,13 @@ def get_base_url() -> str:
     return os.getenv("SIPRTC_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
 
 
-def resolve_auth(
-    auth_id: str | None,
-    auth_secret: str | None,
-) -> tuple[str, str]:
-    resolved_id = auth_id or SESSION.auth_id or os.getenv(ENV_AUTH_ID)
-    resolved_secret = auth_secret or SESSION.auth_secret or os.getenv(ENV_AUTH_SECRET)
+def resolve_env_auth() -> tuple[str, str]:
+    resolved_id = os.getenv(ENV_AUTH_ID)
+    resolved_secret = os.getenv(ENV_AUTH_SECRET)
     if not resolved_id or not resolved_secret:
         raise ValueError(
-            "Missing Siprtc credentials. Provide auth_id and auth_secret, "
-            "call siprtc.set_credentials, or set SIPRTC_AUTH_ID and SIPRTC_AUTH_SECRET."
+            "Missing Siprtc credentials. Provide an Authorization bearer token for HTTP requests, "
+            "or set SIPRTC_AUTH_ID and SIPRTC_AUTH_SECRET for single-tenant local usage."
         )
     return resolved_id, resolved_secret
 

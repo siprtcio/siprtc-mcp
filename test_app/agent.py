@@ -1,10 +1,10 @@
 import os
+from base64 import urlsafe_b64encode
 
 import anyio
 from deepagents import create_deep_agent
 from dotenv import load_dotenv
-from mcp import ClientSession
-from mcp.client.streamable_http import streamable_http_client
+from fastmcp import Client
 
 
 def _require_env(name: str) -> None:
@@ -24,16 +24,24 @@ def _format_result(result) -> str:
     return "\n".join(parts)
 
 
+def _build_auth_token() -> str:
+    auth_id = os.getenv("SIPRTC_AUTH_ID")
+    auth_secret = os.getenv("SIPRTC_AUTH_SECRET")
+    if not auth_id or not auth_secret:
+        raise RuntimeError("Missing SIPRTC_AUTH_ID or SIPRTC_AUTH_SECRET for MCP HTTP authentication.")
+
+    return urlsafe_b64encode(f"{auth_id}:{auth_secret}".encode("utf-8")).decode("ascii")
+
+
 def siprtc_tool(tool_name: str, arguments: dict) -> str:
     """Call a Siprtc MCP tool by name with JSON arguments."""
     server_url = os.getenv("MCP_SERVER_URL", "http://siprtc-mcp:8000/mcp")
+    auth_token = _build_auth_token()
 
     async def _run() -> str:
-        async with streamable_http_client(server_url) as (read, write, _):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.call_tool(tool_name, arguments or {})
-                return _format_result(result)
+        async with Client(server_url, auth=auth_token) as client:
+            result = await client.call_tool(tool_name, arguments or {}, raise_on_error=False)
+            return _format_result(result)
 
     return anyio.run(_run)
 

@@ -25,9 +25,10 @@ python -m siprtc_mcp
 
 Credentials are resolved in this order:
 
-1. Per-tool arguments `auth_id` and `auth_secret`
-2. Session credentials set via `siprtc.set_credentials`
-3. Environment variables `SIPRTC_AUTH_ID` and `SIPRTC_AUTH_SECRET`
+1. HTTP bearer token for the current request
+2. Environment variables `SIPRTC_AUTH_ID` and `SIPRTC_AUTH_SECRET`
+
+For HTTP transport, the bearer token must be the URL-safe base64 encoding of `auth_id:auth_secret`.
 
 ## Configurable endpoints
 

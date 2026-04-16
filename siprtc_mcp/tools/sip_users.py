@@ -16,10 +16,8 @@ def register(mcp, client_factory):
     def list_sip_users(
         params: dict | None = None,
         endpoint_path: str | None = None,
-        auth_id: str | None = None,
-        auth_secret: str | None = None,
     ) -> Any:
-        client: SiprtcClient = client_factory(auth_id, auth_secret)
+        client: SiprtcClient = client_factory()
         template = endpoint_path or sip_users_path()
         path = format_path(template, auth_id=client.auth_id)
         return client.request("GET", path, params=params)
@@ -34,10 +32,8 @@ def register(mcp, client_factory):
     def create_sip_user(
         payload: dict,
         endpoint_path: str | None = None,
-        auth_id: str | None = None,
-        auth_secret: str | None = None,
     ) -> Any:
-        client: SiprtcClient = client_factory(auth_id, auth_secret)
+        client: SiprtcClient = client_factory()
         template = endpoint_path or sip_users_path()
         path = format_path(template, auth_id=client.auth_id)
         return client.request("POST", path, json=payload)
@@ -53,10 +49,8 @@ def register(mcp, client_factory):
         endpoint_id: str,
         payload: dict | None = None,
         endpoint_path: str | None = None,
-        auth_id: str | None = None,
-        auth_secret: str | None = None,
     ) -> Any:
-        client: SiprtcClient = client_factory(auth_id, auth_secret)
+        client: SiprtcClient = client_factory()
         template = endpoint_path or sip_user_path()
         path = format_path(template, auth_id=client.auth_id, endpoint_id=endpoint_id)
         return client.request("PUT", path, json=payload)
@@ -72,10 +66,8 @@ def register(mcp, client_factory):
         endpoint_id: str,
         payload: dict,
         endpoint_path: str | None = None,
-        auth_id: str | None = None,
-        auth_secret: str | None = None,
     ) -> Any:
-        client: SiprtcClient = client_factory(auth_id, auth_secret)
+        client: SiprtcClient = client_factory()
         template = endpoint_path or sip_user_path()
         path = format_path(template, auth_id=client.auth_id, endpoint_id=endpoint_id)
         return client.request("PATCH", path, json=payload)
