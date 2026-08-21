@@ -4,6 +4,10 @@ version = "0.1.0"
 description = "MCP server for Siprtc CPaaS APIs"
 readme = "README.md"
 requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+keywords = ["mcp", "model-context-protocol", "cpaas", "voice", "sms", "siprtc", "llm-tools"]
+urls = { Homepage = "https://siprtc.io/mcp/", Source = "https://github.com/siprtcio/siprtc-mcp", Documentation = "https://siprtc.io/docs/" }
 dependencies = [
     "fastmcp>=3.2.3",
     "httpx>=0.28.1",
