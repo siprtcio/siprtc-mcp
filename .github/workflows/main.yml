@@ -1,0 +1,1175 @@
+name: Manual Release Build
+
+on:
+  workflow_dispatch:
+    inputs:
+
+      source_branch:
+        description: "Source branch to build"
+        required: true
+        type: string
+        default: "dev"
+
+      target_branch:
+        description: "Target branch/environment"
+        required: true
+        type: string
+        default: "dev"
+
+      build_mode:
+        description: "Normal build or rebuild an old build"
+        required: true
+        type: choice
+        options:
+          - normal
+          - rebuild
+        default: normal
+
+      source_build_number:
+        description: "Old build number for rebuild"
+        required: false
+        type: string
+
+      reason:
+        description: "Reason for this build"
+        required: false
+        type: string
+        default: "Manual release build"
+
+
+# ==============================================================
+# PERMISSIONS
+#
+# GITHUB_TOKEN is used instead of BUILD_COUNTER_TOKEN.
+#
+# contents: write allows the workflow to create Git tags.
+# ==============================================================
+
+permissions:
+  contents: write
+
+
+# ==============================================================
+# REPOSITORY-SPECIFIC CONCURRENCY
+#
+# Only one build-number allocation can happen at a time
+# inside this repository.
+#
+# Example:
+#
+# siprtcio/numberservice
+# siprtcio/contactcenterservice
+#
+# each has its own counter.
+# ==============================================================
+
+concurrency:
+  group: release-build-counter-${{ github.repository }}
+  cancel-in-progress: false
+
+
+# ==============================================================
+# REPOSITORY VARIABLES
+#
+# Required:
+#
+# AWS_REGION
+# ECR_REPOSITORY
+# LAST_BUILD_NUMBER
+#
+# LAST_BUILD_NUMBER is the INITIAL SEED.
+#
+# Example:
+#
+# LAST_BUILD_NUMBER = 1273
+#
+# First run = 1274
+#
+# After that, Git tags maintain the counter.
+# ==============================================================
+
+env:
+
+  AWS_REGION: ${{ vars.AWS_REGION }}
+
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+
+  BUILD_VARIABLE_NAME: LAST_BUILD_NUMBER
+
+
+jobs:
+
+  release:
+
+    name: Manual Release
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 30
+
+
+    steps:
+
+
+      # ========================================================
+      # 1. VALIDATE CONFIGURATION
+      # ========================================================
+
+      - name: Validate configuration
+
+        shell: bash
+
+        run: |
+
+          set -euo pipefail
+
+          echo ""
+          echo "=================================================="
+          echo "             CONFIGURATION CHECK"
+          echo "=================================================="
+          echo ""
+
+          if [ -z "${AWS_REGION:-}" ]; then
+
+            echo "ERROR: AWS_REGION repository variable is missing."
+
+            exit 1
+
+          fi
+
+
+          if [ -z "${ECR_REPOSITORY:-}" ]; then
+
+            echo "ERROR: ECR_REPOSITORY repository variable is missing."
+
+            exit 1
+
+          fi
+
+
+          if [ -z "${{ inputs.source_branch }}" ]; then
+
+            echo "ERROR: source_branch is required."
+
+            exit 1
+
+          fi
+
+
+          if [ -z "${{ inputs.target_branch }}" ]; then
+
+            echo "ERROR: target_branch is required."
+
+            exit 1
+
+          fi
+
+
+          if [ -z "${{ vars.LAST_BUILD_NUMBER }}" ]; then
+
+            echo "ERROR: LAST_BUILD_NUMBER repository variable is missing."
+
+            exit 1
+
+          fi
+
+
+          if ! [[ "${{ vars.LAST_BUILD_NUMBER }}" =~ ^[0-9]+$ ]]; then
+
+            echo "ERROR: LAST_BUILD_NUMBER must be numeric."
+
+            echo "Current value: ${{ vars.LAST_BUILD_NUMBER }}"
+
+            exit 1
+
+          fi
+
+
+          if [ "${{ inputs.build_mode }}" = "rebuild" ]; then
+
+            if ! [[ "${{ inputs.source_build_number }}" =~ ^[0-9]+$ ]]; then
+
+              echo ""
+              echo "ERROR: source_build_number must be numeric"
+              echo "when build_mode is rebuild."
+
+              exit 1
+
+            fi
+
+          fi
+
+
+          echo "Configuration OK."
+
+          echo ""
+          echo "Repository    : ${GITHUB_REPOSITORY}"
+          echo "Service       : ${ECR_REPOSITORY}"
+          echo "Source branch : ${{ inputs.source_branch }}"
+          echo "Target branch : ${{ inputs.target_branch }}"
+          echo "Mode          : ${{ inputs.build_mode }}"
+          echo "Old build     : ${{ inputs.source_build_number || 'N/A' }}"
+          echo ""
+
+
+      # ========================================================
+      # 2. CHECKOUT REPOSITORY
+      #
+      # NORMAL:
+      #   checkout selected source branch
+      #
+      # REBUILD:
+      #   initially checkout workflow branch (main)
+      #   then resolve release-build-XXX
+      #
+      # fetch-depth: 0 is REQUIRED because we use Git tags.
+      # ========================================================
+
+      - name: Checkout repository
+
+        uses: actions/checkout@v4
+
+        with:
+
+          ref: ${{ github.ref }}
+
+          fetch-depth: 0
+
+          persist-credentials: true
+
+
+      # ========================================================
+      # 3. RESOLVE SOURCE
+      #
+      # This happens BEFORE reserving the new build number.
+      #
+      # NORMAL:
+      #   selected source branch -> exact commit
+      #
+      # REBUILD:
+      #   release-build-XXX -> exact old commit
+      # ========================================================
+
+      - name: Resolve source
+
+        id: source
+
+        shell: bash
+
+        run: |
+
+          set -euo pipefail
+
+
+          BUILD_MODE="${{ inputs.build_mode }}"
+
+          SOURCE_BRANCH="${{ inputs.source_branch }}"
+
+          SOURCE_BUILD="${{ inputs.source_build_number }}"
+
+
+          # ====================================================
+          # NORMAL BUILD
+          # ====================================================
+
+          if [ "$BUILD_MODE" = "normal" ]; then
+
+            echo ""
+            echo "=================================================="
+            echo "                 NORMAL BUILD"
+            echo "=================================================="
+            echo ""
+
+            echo "Source branch:"
+            echo "${SOURCE_BRANCH}"
+
+            echo ""
+
+
+            git fetch \
+              --force \
+              origin \
+              "${SOURCE_BRANCH}"
+
+
+            git checkout --detach "origin/${SOURCE_BRANCH}"
+
+
+            SOURCE_COMMIT=$(git rev-parse HEAD)
+
+
+            SOURCE_TAG=""
+
+
+            echo "Source commit:"
+            echo "${SOURCE_COMMIT}"
+
+            echo ""
+
+
+          # ====================================================
+          # REBUILD OLD BUILD
+          # ====================================================
+
+          else
+
+            SOURCE_TAG="release-build-${SOURCE_BUILD}"
+
+
+            echo ""
+            echo "=================================================="
+            echo "                 REBUILD OLD BUILD"
+            echo "=================================================="
+            echo ""
+
+            echo "Old build:"
+            echo "${SOURCE_BUILD}"
+
+            echo ""
+
+            echo "Required tag:"
+            echo "${SOURCE_TAG}"
+
+            echo ""
+
+
+            git fetch \
+              --force \
+              --tags \
+              origin
+
+
+            if ! git rev-parse \
+                -q \
+                --verify \
+                "refs/tags/${SOURCE_TAG}" >/dev/null 2>&1; then
+
+              echo ""
+              echo "ERROR: ${SOURCE_TAG} does not exist."
+
+              echo ""
+              echo "The old build cannot be rebuilt."
+
+              echo ""
+
+              exit 1
+
+            fi
+
+
+            SOURCE_COMMIT=$(git rev-list \
+              -n 1 \
+              "refs/tags/${SOURCE_TAG}")
+
+
+            echo "Exact commit used by old build:"
+            echo "${SOURCE_COMMIT}"
+
+            echo ""
+
+
+            git checkout --detach "${SOURCE_COMMIT}"
+
+
+            echo "Old build source checked out."
+
+          fi
+
+
+          echo "source_commit=${SOURCE_COMMIT}" >> "$GITHUB_OUTPUT"
+
+          echo "source_tag=${SOURCE_TAG}" >> "$GITHUB_OUTPUT"
+
+
+      # ========================================================
+      # 4. RESERVE NEXT BUILD NUMBER
+      #
+      # NO PAT.
+      #
+      # NO GitHub Variables API.
+      #
+      # We use Git tags as the persistent counter.
+      #
+      # LAST_BUILD_NUMBER is the initial seed.
+      #
+      # Example:
+      #
+      # LAST_BUILD_NUMBER = 1273
+      #
+      # release-build-1273 exists
+      #
+      # next = 1274
+      #
+      # The reservation tag is created BEFORE Docker build.
+      #
+      # Therefore:
+      #
+      # 1274 Docker build succeeds
+      #       -> release-build-1274
+      #
+      # OR
+      #
+      # 1274 Docker build fails
+      #       -> build-reserved-1274 remains
+      #
+      # Next run = 1275
+      # ========================================================
+
+      - name: Reserve next build number
+
+        id: build-number
+
+        shell: bash
+
+        env:
+
+          SOURCE_COMMIT: ${{ steps.source.outputs.source_commit }}
+
+        run: |
+
+          set -euo pipefail
+
+
+          echo ""
+          echo "=================================================="
+          echo "          BUILD NUMBER ALLOCATION"
+          echo "=================================================="
+          echo ""
+
+
+          SEED="${{ vars.LAST_BUILD_NUMBER }}"
+
+
+          if ! [[ "$SEED" =~ ^[0-9]+$ ]]; then
+
+            echo "ERROR: LAST_BUILD_NUMBER is not numeric."
+
+            exit 1
+
+          fi
+
+
+          echo "Repository:"
+          echo "${GITHUB_REPOSITORY}"
+
+          echo ""
+
+          echo "Initial seed:"
+          echo "${SEED}"
+
+          echo ""
+
+
+          # ----------------------------------------------------
+          # GET ALL TAGS
+          # ----------------------------------------------------
+
+          git fetch \
+            --force \
+            --tags \
+            origin
+
+
+          # ----------------------------------------------------
+          # FIND HIGHEST CONSUMED BUILD NUMBER
+          #
+          # Successful builds:
+          #
+          # release-build-1274
+          #
+          # Failed builds:
+          #
+          # build-reserved-1275
+          #
+          # Both count as consumed numbers.
+          # ----------------------------------------------------
+
+          MAX_BUILD="$SEED"
+
+
+          while read -r TAG; do
+
+            NUMBER="${TAG#release-build-}"
+
+
+            if [[ "$NUMBER" =~ ^[0-9]+$ ]]; then
+
+              if (( NUMBER > MAX_BUILD )); then
+
+                MAX_BUILD="$NUMBER"
+
+              fi
+
+            fi
+
+          done < <(git tag -l 'release-build-*')
+
+
+          while read -r TAG; do
+
+            NUMBER="${TAG#build-reserved-}"
+
+
+            if [[ "$NUMBER" =~ ^[0-9]+$ ]]; then
+
+              if (( NUMBER > MAX_BUILD )); then
+
+                MAX_BUILD="$NUMBER"
+
+              fi
+
+            fi
+
+          done < <(git tag -l 'build-reserved-*')
+
+
+          NEXT_BUILD=$((MAX_BUILD + 1))
+
+
+          echo ""
+          echo "Highest consumed : ${MAX_BUILD}"
+          echo "New build        : ${NEXT_BUILD}"
+          echo ""
+
+
+          # ----------------------------------------------------
+          # RESERVE NUMBER IMMEDIATELY
+          #
+          # This tag consumes the number permanently.
+          #
+          # It is created BEFORE Docker build.
+          # ----------------------------------------------------
+
+          RESERVATION_TAG="build-reserved-${NEXT_BUILD}"
+
+
+          echo "Creating reservation:"
+          echo "${RESERVATION_TAG}"
+
+          echo ""
+
+
+          git config user.name "github-actions[bot]"
+
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+
+          # ----------------------------------------------------
+          # SAFETY CHECK
+          # ----------------------------------------------------
+
+          if git ls-remote \
+              --exit-code \
+              --tags \
+              origin \
+              "refs/tags/${RESERVATION_TAG}" >/dev/null 2>&1; then
+
+            echo ""
+            echo "ERROR: ${RESERVATION_TAG} already exists."
+
+            echo "This should not happen."
+
+            exit 1
+
+          fi
+
+
+          # ----------------------------------------------------
+          # CREATE RESERVATION TAG
+          #
+          # It points to the EXACT source commit.
+          # ----------------------------------------------------
+
+          git tag \
+            -a "${RESERVATION_TAG}" \
+            "${SOURCE_COMMIT}" \
+            -m "Reserve build number ${NEXT_BUILD}"
+
+
+          # ----------------------------------------------------
+          # PUSH USING GITHUB_TOKEN
+          # ----------------------------------------------------
+
+          git push origin \
+            "refs/tags/${RESERVATION_TAG}"
+
+
+          echo ""
+          echo "Build number reserved successfully."
+          echo ""
+
+          echo "Previous build:"
+          echo "${MAX_BUILD}"
+
+          echo ""
+
+          echo "New build:"
+          echo "${NEXT_BUILD}"
+
+          echo ""
+
+
+          echo "build_number=${NEXT_BUILD}" >> "$GITHUB_OUTPUT"
+
+          echo "previous_build=${MAX_BUILD}" >> "$GITHUB_OUTPUT"
+
+          echo "reservation_tag=${RESERVATION_TAG}" >> "$GITHUB_OUTPUT"
+
+
+      # ========================================================
+      # 5. VERIFY DOCKERFILE
+      #
+      # IMPORTANT:
+      #
+      # Build number has already been consumed.
+      #
+      # Therefore even this failure does NOT reuse the number.
+      # ========================================================
+
+      - name: Verify Dockerfile
+
+        shell: bash
+
+        run: |
+
+          set -euo pipefail
+
+
+          if [ ! -f "Dockerfile" ]; then
+
+            echo ""
+            echo "ERROR: Dockerfile not found."
+
+            echo ""
+
+            echo "Commit:"
+            git rev-parse HEAD
+
+            exit 1
+
+          fi
+
+
+          echo "Dockerfile found."
+
+
+      # ========================================================
+      # 6. PREPARE ECR TAG
+      #
+      # ONLY:
+      #
+      # 1274-dev
+      # 1275-qa
+      # 1276-master
+      #
+      # NO standalone:
+      #
+      # 1274
+      # 1275
+      # 1276
+      # ========================================================
+
+      - name: Prepare ECR tag
+
+        id: ecr
+
+        shell: bash
+
+        run: |
+
+          set -euo pipefail
+
+
+          TARGET_BRANCH="${{ inputs.target_branch }}"
+
+          BUILD_NUMBER="${{ steps.build-number.outputs.build_number }}"
+
+
+          # ----------------------------------------------------
+          # Convert branch name into safe ECR tag suffix
+          #
+          # feature/login
+          #       ↓
+          # feature-login
+          # ----------------------------------------------------
+
+          SAFE_BRANCH=$(printf '%s' "${TARGET_BRANCH}" \
+            | sed 's#[^A-Za-z0-9_.-]#-#g')
+
+
+          SAFE_BRANCH=$(printf '%s' "${SAFE_BRANCH}" \
+            | sed 's/^[.-]*//; s/[.-]*$//')
+
+
+          SAFE_BRANCH=$(printf '%s' "${SAFE_BRANCH}" \
+            | cut -c1-100)
+
+
+          if [ -z "${SAFE_BRANCH}" ]; then
+
+            echo "ERROR: Invalid target branch for ECR tag."
+
+            exit 1
+
+          fi
+
+
+          ECR_TAG="${SAFE_BRANCH}-${BUILD_NUMBER}"
+
+
+          echo "ecr_tag=${ECR_TAG}" >> "$GITHUB_OUTPUT"
+
+
+          echo ""
+          echo "ECR tag:"
+          echo "${ECR_TAG}"
+          echo ""
+
+
+      # ========================================================
+      # 7. DISPLAY BUILD INFORMATION
+      # ========================================================
+
+      - name: Display build information
+
+        shell: bash
+
+        run: |
+
+          echo ""
+          echo "=================================================="
+          echo "                  BUILD PLAN"
+          echo "=================================================="
+          echo ""
+
+          echo "Repository          : ${GITHUB_REPOSITORY}"
+
+          echo "Service             : ${ECR_REPOSITORY}"
+
+          echo "Previous build      : ${{ steps.build-number.outputs.previous_build }}"
+
+          echo "New build           : ${{ steps.build-number.outputs.build_number }}"
+
+          echo "Build mode          : ${{ inputs.build_mode }}"
+
+          echo "Source branch       : ${{ inputs.source_branch }}"
+
+          echo "Source build        : ${{ inputs.source_build_number || 'N/A' }}"
+
+          echo "Source tag          : ${{ steps.source.outputs.source_tag || 'N/A' }}"
+
+          echo "Source commit       : ${{ steps.source.outputs.source_commit }}"
+
+          echo "Target branch       : ${{ inputs.target_branch }}"
+
+          echo "ECR tag             : ${{ steps.ecr.outputs.ecr_tag }}"
+
+          echo "GitHub run          : #${GITHUB_RUN_NUMBER}"
+
+          echo "Requested by        : ${GITHUB_ACTOR}"
+
+          echo "Reason              : ${{ inputs.reason }}"
+
+          echo ""
+
+
+      # ========================================================
+      # 8. AWS LOGIN
+      # ========================================================
+
+      - name: Configure AWS credentials
+
+        uses: aws-actions/configure-aws-credentials@v5
+
+        with:
+
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+          aws-region: ${{ env.AWS_REGION }}
+
+
+      # ========================================================
+      # 9. ENSURE ECR REPOSITORY
+      # ========================================================
+
+      - name: Ensure ECR repository exists
+
+        shell: bash
+
+        run: |
+
+          set -euo pipefail
+
+
+          if aws ecr describe-repositories \
+              --repository-names "${ECR_REPOSITORY}" \
+              --region "${AWS_REGION}" >/dev/null 2>&1; then
+
+            echo "ECR repository exists:"
+            echo "${ECR_REPOSITORY}"
+
+          else
+
+            echo "Creating ECR repository:"
+            echo "${ECR_REPOSITORY}"
+
+
+            aws ecr create-repository \
+              --repository-name "${ECR_REPOSITORY}" \
+              --region "${AWS_REGION}" >/dev/null
+
+
+            echo "ECR repository created."
+
+          fi
+
+
+      # ========================================================
+      # 10. LOGIN TO ECR
+      # ========================================================
+
+      - name: Login to Amazon ECR
+
+        id: login-ecr
+
+        uses: aws-actions/amazon-ecr-login@v2
+
+
+      # ========================================================
+      # 11. SETUP DOCKER BUILDX
+      # ========================================================
+
+      - name: Set up Docker Buildx
+
+        uses: docker/setup-buildx-action@v3
+
+
+      # ========================================================
+      # 12. BUILD AND PUSH DOCKER IMAGE
+      #
+      # NO go test
+      # NO go vet
+      # NO separate test job
+      #
+      # Full Docker build.
+      # ========================================================
+
+      - name: Build and push Docker image
+
+        uses: docker/build-push-action@v6
+
+        with:
+
+          context: .
+
+          file: ./Dockerfile
+
+          platforms: linux/amd64
+
+          push: true
+
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.ecr.outputs.ecr_tag }}
+
+          labels: |
+            org.opencontainers.image.title=${{ env.ECR_REPOSITORY }}
+            org.opencontainers.image.version=${{ steps.build-number.outputs.build_number }}
+            org.opencontainers.image.revision=${{ steps.source.outputs.source_commit }}
+            org.opencontainers.image.source-branch=${{ inputs.source_branch }}
+            org.opencontainers.image.target-branch=${{ inputs.target_branch }}
+            org.opencontainers.image.build-mode=${{ inputs.build_mode }}
+            org.opencontainers.image.source-build=${{ inputs.source_build_number || 'N/A' }}
+            org.opencontainers.image.github-repository=${{ github.repository }}
+            org.opencontainers.image.github-run=${{ github.run_id }}
+
+
+      # ========================================================
+      # 13. VERIFY ECR IMAGE
+      # ========================================================
+
+      - name: Verify ECR image
+
+        shell: bash
+
+        run: |
+
+          set -euo pipefail
+
+
+          ECR_TAG="${{ steps.ecr.outputs.ecr_tag }}"
+
+
+          echo ""
+          echo "=================================================="
+          echo "             VERIFYING ECR IMAGE"
+          echo "=================================================="
+          echo ""
+
+          echo "Repository:"
+          echo "${ECR_REPOSITORY}"
+
+          echo ""
+
+          echo "Tag:"
+          echo "${ECR_TAG}"
+
+          echo ""
+
+
+          aws ecr describe-images \
+            --repository-name "${ECR_REPOSITORY}" \
+            --image-ids imageTag="${ECR_TAG}" \
+            --region "${AWS_REGION}" >/dev/null
+
+
+          echo "ECR image verified successfully."
+
+          echo ""
+
+
+      # ========================================================
+      # 14. CREATE SUCCESSFUL RELEASE TAG
+      #
+      # Example:
+      #
+      # release-build-1274
+      #       ↓
+      # exact source commit
+      #
+      # This is used later for rebuilds.
+      # ========================================================
+
+      - name: Create release tag
+
+        if: success()
+
+        shell: bash
+
+        env:
+
+          BUILD_NUMBER: ${{ steps.build-number.outputs.build_number }}
+
+          SOURCE_COMMIT: ${{ steps.source.outputs.source_commit }}
+
+        run: |
+
+          set -euo pipefail
+
+
+          RELEASE_TAG="release-build-${BUILD_NUMBER}"
+
+
+          echo ""
+          echo "=================================================="
+          echo "              CREATE RELEASE TAG"
+          echo "=================================================="
+          echo ""
+
+          echo "Release tag:"
+          echo "${RELEASE_TAG}"
+
+          echo ""
+
+          echo "Source commit:"
+          echo "${SOURCE_COMMIT}"
+
+          echo ""
+
+
+          git config user.name "github-actions[bot]"
+
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+
+          # ----------------------------------------------------
+          # SAFETY CHECK
+          # ----------------------------------------------------
+
+          if git ls-remote \
+              --exit-code \
+              --tags \
+              origin \
+              "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+
+            echo ""
+            echo "ERROR: ${RELEASE_TAG} already exists."
+
+            exit 1
+
+          fi
+
+
+          # ----------------------------------------------------
+          # CREATE RELEASE TAG
+          # ----------------------------------------------------
+
+          git tag \
+            -a "${RELEASE_TAG}" \
+            "${SOURCE_COMMIT}" \
+            -m "Release build ${BUILD_NUMBER} | source=${{ inputs.source_branch }} | target=${{ inputs.target_branch }} | mode=${{ inputs.build_mode }} | source_build=${{ inputs.source_build_number || 'N/A' }}"
+
+
+          git push origin \
+            "refs/tags/${RELEASE_TAG}"
+
+
+          echo ""
+          echo "Release tag created successfully:"
+          echo "${RELEASE_TAG}"
+
+          echo ""
+
+
+      # ========================================================
+      # 15. SUMMARY
+      # ========================================================
+
+      - name: Write summary
+
+        if: always()
+
+        shell: bash
+
+        run: |
+
+          {
+
+            echo "# Manual Release Build"
+
+            echo ""
+
+            echo "| Field | Value |"
+
+            echo "|---|---|"
+
+            echo "| Repository | \`${GITHUB_REPOSITORY}\` |"
+
+            echo "| Service | \`${ECR_REPOSITORY}\` |"
+
+            echo "| Previous build | \`${{ steps.build-number.outputs.previous_build }}\` |"
+
+            echo "| New build | \`${{ steps.build-number.outputs.build_number }}\` |"
+
+            echo "| Mode | \`${{ inputs.build_mode }}\` |"
+
+            echo "| Source branch | \`${{ inputs.source_branch }}\` |"
+
+            echo "| Source build | \`${{ inputs.source_build_number || 'N/A' }}\` |"
+
+            echo "| Source commit | \`${{ steps.source.outputs.source_commit }}\` |"
+
+            echo "| Target branch | \`${{ inputs.target_branch }}\` |"
+
+            echo "| ECR tag | \`${{ steps.ecr.outputs.ecr_tag }}\` |"
+
+            echo "| GitHub run | \`#${GITHUB_RUN_NUMBER}\` |"
+
+            echo "| Requested by | \`${GITHUB_ACTOR}\` |"
+
+            echo ""
+
+            echo "## ECR"
+
+            echo ""
+
+            echo "\`${ECR_REPOSITORY}:${{ steps.ecr.outputs.ecr_tag }}\`"
+
+            echo ""
+
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+
+      # ========================================================
+      # 16. SUCCESS
+      # ========================================================
+
+      - name: Success
+
+        if: success()
+
+        shell: bash
+
+        run: |
+
+          echo ""
+          echo "=================================================="
+          echo "               BUILD SUCCESSFUL"
+          echo "=================================================="
+          echo ""
+
+          echo "Service       : ${ECR_REPOSITORY}"
+
+          echo "Build         : ${{ steps.build-number.outputs.build_number }}"
+
+          echo "Source        : ${{ inputs.source_branch }}"
+
+          echo "Target        : ${{ inputs.target_branch }}"
+
+          echo "ECR tag       : ${{ steps.ecr.outputs.ecr_tag }}"
+
+          echo ""
+
+          echo "ECR image:"
+          echo "${ECR_REPOSITORY}:${{ steps.ecr.outputs.ecr_tag }}"
+
+          echo ""
+
+          echo "Release tag:"
+          echo "release-build-${{ steps.build-number.outputs.build_number }}"
+
+          echo ""
+
+          echo "=================================================="
+          echo ""
+
+
+      # ========================================================
+      # 17. FAILURE
+      #
+      # If the number was already reserved, it is consumed.
+      # It will NEVER be reused.
+      # ========================================================
+
+      - name: Failure
+
+        if: failure()
+
+        shell: bash
+
+        run: |
+
+          echo ""
+          echo "=================================================="
+          echo "                 BUILD FAILED"
+          echo "=================================================="
+          echo ""
+
+          echo "Repository:"
+          echo "${GITHUB_REPOSITORY}"
+
+          echo ""
+
+          echo "Consumed build:"
+          echo "${{ steps.build-number.outputs.build_number }}"
+
+          echo ""
+
+          echo "The build number has been consumed."
+
+          echo "It will NOT be reused."
+
+          echo ""
+
+          echo "Reservation tag:"
+          echo "${{ steps.build-number.outputs.reservation_tag }}"
+
+          echo ""
+
+          echo "Next manual run will receive the next number."
+
+          echo ""
+
+          echo "=================================================="
+          echo ""
