@@ -13,22 +13,17 @@ from .client import SiprtcClient, close_shared_client
 from .config import TOOLSETS, ConfigError, Settings, get_settings
 from .tools import (
     account,
-    ai_agents,
     applications,
-    campaigns,
     channels,
     conferences,
     fax_email,
-    flows,
     messages,
     phone_numbers,
     recordings,
-    reports,
     sip,
-    taskrouter,
+    sip_trunking,
     trunks,
     voice_calls,
-    workforce,
 )
 from .toolset import Toolset
 
@@ -43,15 +38,10 @@ MODULES = {
     "fax_email": fax_email,
     "phone_numbers": phone_numbers,
     "sip": sip,
+    "sip_trunking": sip_trunking,
     "trunks": trunks,
     "applications": applications,
     "account": account,
-    "taskrouter": taskrouter,
-    "campaigns": campaigns,
-    "reports": reports,
-    "flows": flows,
-    "ai_agents": ai_agents,
-    "workforce": workforce,
 }
 if tuple(MODULES) != TOOLSETS:  # pragma: no cover - a packaging mistake, caught by the tests
     raise RuntimeError("server.MODULES and config.TOOLSETS disagree")
@@ -59,7 +49,7 @@ if tuple(MODULES) != TOOLSETS:  # pragma: no cover - a packaging mistake, caught
 INSTRUCTIONS = """\
 Tools for the SIPRTC CPaaS API, acting on the account whose Auth ID and secret this server holds.
 Phone numbers are E.164 (+14155550100). List tools are paged; ask for the next page rather than
-assuming a list is complete. Tools that place calls, send messages, buy numbers, start campaigns or
+assuming a list is complete. Tools that place calls, send messages, buy numbers or
 delete things act on the real account and may cost money: confirm with the user before calling them.
 """
 

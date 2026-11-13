@@ -26,7 +26,7 @@ async def tools():
 
 async def test_every_tool_is_namespaced_described_and_annotated():
     found = await tools()
-    assert len(found) > 150
+    assert len(found) > 100
     for name, tool in found.items():
         assert name.startswith("siprtc."), name
         assert tool.description and len(tool.description) >= 15, name
@@ -67,7 +67,7 @@ async def test_toolsets_limit_the_surface(monkeypatch):
     get_settings.cache_clear()
     found = await tools()
     assert "siprtc.make_call" in found and "siprtc.send_sms" in found
-    assert "siprtc.list_workspaces" not in found and "siprtc.get_balance" not in found
+    assert "siprtc.list_sip_trunks" not in found and "siprtc.get_balance" not in found
 
 
 # --- calling tools -------------------------------------------------------------------------
@@ -142,6 +142,38 @@ async def test_update_application_keeps_fields_it_was_not_given():
         await c.call_tool("siprtc.update_application", {"application_id": sid, "voice_url": "https://b/v"})
     body = json.loads(put.calls.last.request.content)
     assert body == {"FriendlyName": "Main", "Status": "active", "VoiceUrl": "https://b/v", "SmsUrl": "https://a/s"}
+
+
+@respx.mock
+async def test_update_account_settings_keeps_the_settings_it_was_not_given():
+    url = f"{BASE}/Accounts/AC0000000000000TEST0/ProfileSetting"
+    current = {"theme": "opto-x", "language": "en", "incoming_domain": "a.test", "incoming_email": "in@a.test"}
+    respx.get(url).mock(return_value=httpx.Response(200, json={"sid": "s", "settings": current}))
+    put = respx.put(url).mock(return_value=httpx.Response(200, json={"status": "success"}))
+    async with Client(create_server()) as c:
+        await c.call_tool("siprtc.update_account_settings", {"language": "fr", "default_fax_number": "14155550100"})
+    assert json.loads(put.calls.last.request.content) == {**current, "language": "fr", "default_fax_did": "14155550100"}
+
+
+@respx.mock
+async def test_carrier_tools_send_credentials_only_in_the_body():
+    base = f"{BASE}/Accounts/AC0000000000000TEST0/Integrations/Carriers"
+    numbers = respx.post(f"{base}/Numbers").mock(return_value=httpx.Response(200, json={"numbers": []}))
+    onboard = respx.post(base).mock(return_value=httpx.Response(200, json={"status": "success"}))
+    async with Client(create_server()) as c:
+        await c.call_tool("siprtc.list_carrier_numbers", {"provider": "telnyx", "secret": "k"})
+        await c.call_tool(
+            "siprtc.onboard_carrier",
+            {"provider": "plivo", "account_id": "MA1", "secret": "t", "countries": ["us"], "numbers": ["+14155550100"]},
+        )
+    assert json.loads(numbers.calls.last.request.content) == {"provider": "telnyx", "credentials": {"secret": "k"}}
+    assert "secret" not in str(numbers.calls.last.request.url)
+    assert json.loads(onboard.calls.last.request.content) == {
+        "provider": "plivo",
+        "credentials": {"account_id": "MA1", "secret": "t"},
+        "numbers": ["+14155550100"],
+        "countries": ["US"],
+    }
 
 
 @respx.mock

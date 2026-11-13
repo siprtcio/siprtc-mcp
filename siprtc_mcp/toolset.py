@@ -19,7 +19,7 @@ log = logging.getLogger("siprtc_mcp")
 
 Kind = Literal["read", "write", "destructive"]
 
-READ_PREFIXES = ("list_", "get_", "check_", "search_", "run_report")
+READ_PREFIXES = ("list_", "get_", "check_", "search_")
 DESTRUCTIVE_PREFIXES = (
     "delete_",
     "release_",
@@ -40,9 +40,6 @@ COST_TOOLS = {
     "send_email",
     "send_messenger_message",
     "buy_phone_number",
-    "set_campaign_status",
-    "send_agent_message",
-    "create_task",
 }
 
 

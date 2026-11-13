@@ -12,6 +12,17 @@ TENANTS = ACCOUNT + "/Tenants"
 TENANT = TENANTS + "/{tenant_auth_id}"
 
 
+_SETTING_KEYS = {
+    "theme",
+    "language",
+    "incoming_domain",
+    "incoming_email",
+    "outgoing_domain",
+    "outgoing_email",
+    "default_fax_did",
+}
+
+
 def register(mcp, client_factory):
     @mcp.tool(name="siprtc.get_balance", description="Show the account's prepaid balance (USD).")
     def get_balance() -> Any:
@@ -64,6 +75,40 @@ def register(mcp, client_factory):
     )
     def get_account_settings() -> Any:
         return api(client_factory, "GET", ACCOUNT + "/ProfileSetting")
+
+    @mcp.tool(
+        name="siprtc.update_account_settings",
+        description=(
+            "Change account settings: theme, language, the email domains and addresses used for "
+            "fax-to-email and email-to-fax, and the default fax number. Only the fields you pass change."
+        ),
+    )
+    def update_account_settings(
+        theme: str | None = None,
+        language: str | None = None,
+        incoming_domain: str | None = None,
+        incoming_email: str | None = None,
+        outgoing_domain: str | None = None,
+        outgoing_email: str | None = None,
+        default_fax_number: str | None = None,
+    ) -> Any:
+        changes = {
+            "theme": theme,
+            "language": language,
+            "incoming_domain": incoming_domain,
+            "incoming_email": incoming_email,
+            "outgoing_domain": outgoing_domain,
+            "outgoing_email": outgoing_email,
+            "default_fax_did": default_fax_number,
+        }
+        changes = {key: value for key, value in changes.items() if value is not None}
+        if not changes:
+            raise ToolError("Pass at least one setting to change.")
+        current = api(client_factory, "GET", ACCOUNT + "/ProfileSetting")
+        settings = current.get("settings") if isinstance(current, dict) else None
+        body = {key: value for key, value in (settings or {}).items() if key in _SETTING_KEYS}
+        body.update(changes)
+        return api(client_factory, "PUT", ACCOUNT + "/ProfileSetting", json=body)
 
     @mcp.tool(
         name="siprtc.get_api_credentials",

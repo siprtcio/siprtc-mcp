@@ -5,8 +5,8 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server that exposes the
 [SIPRTC](https://siprtc.io) CPaaS API as tools an LLM agent can call. Your agent decides to
-place a call, send a message or route a contact-centre task; this server makes the API
-request against your own SIPRTC account.
+place a call, send a message or buy a number; this server makes the API request against
+your own SIPRTC account.
 
 It authenticates with HTTP Basic Auth using your SIPRTC `auth_id` and `auth_secret`, and
 speaks both stdio and Streamable HTTP.
@@ -14,11 +14,12 @@ speaks both stdio and Streamable HTTP.
 - **API reference:** https://siprtc.io/docs/
 - **About this server:** https://siprtc.io/mcp/
 
-> **Status: v0.2.0.** Covers every API that accepts an account's Auth ID and secret:
-> voice, conferences, recordings and privacy controls, messaging and channels, fax and email,
-> numbers, SIP, carrier trunks, applications, the account, TaskRouter, campaigns, reports,
-> flows, AI agents and workforce scheduling. If a call you need is missing, open an issue
-> describing what you were trying to do.
+> **Status: v0.2.0.** Covers the public CPaaS core that accepts an account's Auth ID and
+> secret: voice, conferences, recordings and privacy controls, messaging, channels and
+> bring-your-own-carrier onboarding, fax and email, numbers, SIP users and domains, SIP
+> trunking, carrier trunks and rates, applications and the account. Contact-centre products
+> (TaskRouter, campaigns, reports, flows, AI agents, workforce) are out of scope. If a CPaaS
+> call you need is missing, open an issue describing what you were trying to do.
 
 ## Quick start
 
@@ -93,7 +94,7 @@ Point it at `http://your-host:8000/mcp` and send the bearer token described unde
 
 ## Safety controls
 
-The server acts on a real account. Calls, messages, number purchases and campaigns cost
+The server acts on a real account. Calls, messages and number purchases cost
 money and reach real people, so it gives you several ways to narrow what a model can do:
 
 - **Tool annotations.** Every tool carries the MCP hints `readOnlyHint`, `destructiveHint`
@@ -120,7 +121,7 @@ This reference is generated from the server (`python scripts/tool_reference.py`)
 
 <!-- tools:start -->
 
-189 tools in 17 toolsets. ✏️ changes something, ⚠️ deletes or ends something, 💲 is billed or reaches people.
+159 tools in 12 toolsets. ✏️ changes something, ⚠️ deletes or ends something, 💲 is billed or reaches people.
 
 ### Voice calls — `voice`
 
@@ -180,7 +181,7 @@ This reference is generated from the server (`python scripts/tool_reference.py`)
 | `siprtc.list_conversations`  | Search the conversation history across channels (sms, whatsapp, webchat, email, ...): filter by conversation_id, contact, to/from, channel, direction or dates (yyyy-mm-dd). |
 | `siprtc.get_conversation_transcript`  | Return one conversation as a plain-text transcript. |
 
-### Messaging channels and Meta — `channels`
+### Messaging channels, Meta and carrier onboarding — `channels`
 
 | Tool | Does |
 | --- | --- |
@@ -192,6 +193,13 @@ This reference is generated from the server (`python scripts/tool_reference.py`)
 | `siprtc.verify_channel_connection` ✏️ | Check a channel connection's credentials against the provider and report the result. |
 | `siprtc.disconnect_channel` ⚠️ | Disconnect (delete) a channel connection. |
 | `siprtc.get_meta_integration`  | Show the account's Facebook/Meta integration and its connected pages (404 when none is connected). |
+| `siprtc.get_meta_authorization_url`  | Get the Facebook login URL that connects a Meta (Facebook) account to this SIPRTC account. |
+| `siprtc.list_meta_pages`  | List the Facebook pages the connected Meta integration can message from, optionally for one Facebook user. |
+| `siprtc.remove_meta_page` ⚠️ | Stop using one Facebook page: messages to it no longer reach this account. |
+| `siprtc.remove_meta_user` ⚠️ | Remove one connected Facebook user and the pages that came with them. |
+| `siprtc.disconnect_meta_integration` ⚠️ | Disconnect the whole Facebook/Meta integration: every page and user. |
+| `siprtc.list_carrier_numbers`  | Check a Twilio, Plivo or Telnyx account's credentials and list its phone numbers, before moving them here with onboard_carrier. |
+| `siprtc.onboard_carrier` ✏️ | Bring your own carrier: connect a Twilio, Plivo or Telnyx account and route the chosen numbers (up to 100, from list_carrier_numbers) through SIPRTC. |
 | `siprtc.send_messenger_message` ✏️ 💲 | Send a Facebook Messenger message from a connected page to a user (recipient_id is their page-scoped id). |
 
 ### Fax and email — `fax_email`
@@ -240,6 +248,51 @@ This reference is generated from the server (`python scripts/tool_reference.py`)
 | `siprtc.associate_sip_domain_application` ✏️ | Attach an application to a SIP domain (it handles calls arriving there), or detach it with associate=false. |
 | `siprtc.delete_sip_domain` ⚠️ | Delete a SIP domain. |
 
+### SIP trunking (BYOC) — `sip_trunking`
+
+| Tool | Does |
+| --- | --- |
+| `siprtc.list_sip_trunks`  | List SIP trunks (bring-your-own-carrier). |
+| `siprtc.get_sip_trunk`  | Fetch one SIP trunk by trunk_id. |
+| `siprtc.create_sip_trunk` ✏️ | Create a SIP trunk. |
+| `siprtc.update_sip_trunk` ✏️ | Rename a SIP trunk, set it active or inactive, or turn call recording on it on or off. |
+| `siprtc.delete_sip_trunk` ⚠️ | Delete a SIP trunk by trunk_id. |
+| `siprtc.list_sip_trunk_credential_lists`  | List SIP trunk credential lists (groups of username/password credentials). |
+| `siprtc.get_sip_trunk_credential_list`  | Fetch one credential list by its id. |
+| `siprtc.create_sip_trunk_credential_list` ✏️ | Create a credential list for SIP trunk authentication. |
+| `siprtc.update_sip_trunk_credential_list` ✏️ | Rename a credential list or set it active/inactive. |
+| `siprtc.delete_sip_trunk_credential_list` ⚠️ | Delete a credential list by its id. |
+| `siprtc.list_sip_trunk_auth_credentials`  | List SIP trunk auth credentials (username/password pairs). |
+| `siprtc.get_sip_trunk_auth_credential`  | Fetch one auth credential by its id. |
+| `siprtc.create_sip_trunk_auth_credential` ✏️ | Create a username/password credential that a carrier or PBX uses to authenticate on a SIP trunk. |
+| `siprtc.update_sip_trunk_auth_credential` ✏️ | Update an auth credential. |
+| `siprtc.delete_sip_trunk_auth_credential` ⚠️ | Delete an auth credential by its id. |
+| `siprtc.list_sip_trunk_ip_acls`  | List SIP trunk IP access control lists (groups of allowed source IPs/CIDRs). |
+| `siprtc.get_sip_trunk_ip_acl`  | Fetch one IP access control list by its id. |
+| `siprtc.create_sip_trunk_ip_acl` ✏️ | Create an IP access control list. |
+| `siprtc.update_sip_trunk_ip_acl` ✏️ | Rename an IP access control list. |
+| `siprtc.delete_sip_trunk_ip_acl` ⚠️ | Delete an IP access control list by its id. |
+| `siprtc.list_sip_trunk_ip_addresses`  | List IP addresses (CIDRs) allowed on SIP trunks. |
+| `siprtc.get_sip_trunk_ip_address`  | Fetch one allowed IP address by its id. |
+| `siprtc.create_sip_trunk_ip_address` ✏️ | Allow a source IP address on SIP trunks and put it in the given IP access control lists (ip_acl_ids). |
+| `siprtc.update_sip_trunk_ip_address` ✏️ | Change an allowed IP address (cidr, a single IPv4 address). |
+| `siprtc.delete_sip_trunk_ip_address` ⚠️ | Delete an allowed IP address by its id. |
+| `siprtc.list_sip_trunk_termination_uris`  | List a trunk's termination URIs (the SIP domains your PBX sends calls to). |
+| `siprtc.get_sip_trunk_termination_uri`  | Fetch one termination URI of a trunk. |
+| `siprtc.create_sip_trunk_termination_uri` ✏️ | Give a trunk a termination URI: sip_domain is the domain name your PBX or carrier sends calls to. |
+| `siprtc.update_sip_trunk_termination_uri` ✏️ | Change a termination URI's sip_domain. |
+| `siprtc.delete_sip_trunk_termination_uri` ⚠️ | Delete a termination URI from a trunk. |
+| `siprtc.list_sip_trunk_origination_uris`  | List a trunk's origination URIs (where SIPRTC sends inbound calls for its numbers). |
+| `siprtc.get_sip_trunk_origination_uri`  | Fetch one origination URI of a trunk. |
+| `siprtc.create_sip_trunk_origination_uri` ✏️ | Add an origination URI to a trunk: sip_uri (e.g. |
+| `siprtc.update_sip_trunk_origination_uri` ✏️ | Change an origination URI's sip_uri or priority, or turn it on or off (enabled). |
+| `siprtc.delete_sip_trunk_origination_uri` ⚠️ | Delete an origination URI from a trunk. |
+| `siprtc.list_sip_trunk_phone_numbers`  | List the phone numbers routed over a trunk. |
+| `siprtc.get_sip_trunk_phone_number`  | Fetch one phone number on a trunk by its trunk_number_id (from list_sip_trunk_phone_numbers). |
+| `siprtc.add_sip_trunk_phone_numbers` ✏️ | Route numbers you own over a trunk: their inbound calls go to the trunk's origination URIs. |
+| `siprtc.update_sip_trunk_phone_number` ✏️ | Set a phone number on a trunk active or inactive. |
+| `siprtc.remove_sip_trunk_phone_number` ⚠️ | Take a phone number off a trunk by its trunk_number_id. |
+
 ### Carrier trunks and rates — `trunks`
 
 | Tool | Does |
@@ -274,6 +327,7 @@ This reference is generated from the server (`python scripts/tool_reference.py`)
 | `siprtc.get_profile`  | Show the account owner's profile (name, email, phone, address). |
 | `siprtc.update_profile` ✏️ | Update the account owner's profile details. |
 | `siprtc.get_account_settings`  | Show account settings: theme, language, email domains for fax-to-email, default fax number. |
+| `siprtc.update_account_settings` ✏️ | Change account settings: theme, language, the email domains and addresses used for fax-to-email and email-to-fax, and the default fax number. |
 | `siprtc.get_api_credentials`  | Show the account's API credentials status: the Auth ID and only a hint of each secret, with when it was last rotated. |
 | `siprtc.list_client_tokens`  | List client tokens issued for SDK / WebRTC clients. |
 | `siprtc.create_client_token` ✏️ | Issue a client token (valid 7 days) for an SDK or WebRTC client. |
@@ -287,114 +341,6 @@ This reference is generated from the server (`python scripts/tool_reference.py`)
 | `siprtc.recharge_customer_balance` ✏️ | Vendor accounts only: add credit to (or, with a negative amount, debit) a customer account's balance. |
 | `siprtc.list_inventory_numbers`  | Vendor accounts only: list the vendor's phone number inventory. |
 | `siprtc.add_inventory_number` ✏️ | Vendor accounts only: add a number to the inventory customers can buy from. |
-
-### TaskRouter (contact centre routing) — `taskrouter`
-
-| Tool | Does |
-| --- | --- |
-| `siprtc.list_workspaces`  | List TaskRouter workspaces (one per contact centre). |
-| `siprtc.get_workspace`  | Fetch one workspace by sid (WS...). |
-| `siprtc.create_workspace` ✏️ | Create a workspace. |
-| `siprtc.update_workspace` ✏️ | Update a workspace (friendly_name and status are required by the API). |
-| `siprtc.list_activities`  | List the activities (agent states such as Available, Break, Offline) in a workspace. |
-| `siprtc.get_activity`  | Fetch one of a workspace's activities (agent states such as Available, Break, Offline) by sid. |
-| `siprtc.delete_activity` ⚠️ | Delete one of a workspace's activities (agent states such as Available, Break, Offline) by sid. |
-| `siprtc.create_activity` ✏️ | Create an agent activity (state). |
-| `siprtc.list_task_queues`  | List the task queues in a workspace. |
-| `siprtc.get_task_queue`  | Fetch one of a workspace's task queues by sid. |
-| `siprtc.delete_task_queue` ⚠️ | Delete one of a workspace's task queues by sid. |
-| `siprtc.create_task_queue` ✏️ | Create a task queue. |
-| `siprtc.update_task_queue` ✏️ | Update a task queue (friendly_name, status and waiting_time are required by the API). |
-| `siprtc.list_workflows`  | List the workflows (routing rules from tasks to queues) in a workspace. |
-| `siprtc.get_workflow`  | Fetch one of a workspace's workflows (routing rules from tasks to queues) by sid. |
-| `siprtc.delete_workflow` ⚠️ | Delete one of a workspace's workflows (routing rules from tasks to queues) by sid. |
-| `siprtc.create_workflow` ✏️ | Create a workflow. |
-| `siprtc.update_workflow` ✏️ | Replace a workflow (send every field; the API overwrites the whole workflow). |
-| `siprtc.list_task_channels`  | List a workspace's task channels (voice, chat, sms, ...). |
-| `siprtc.list_workers`  | List the workers (agents) in a workspace. |
-| `siprtc.get_worker`  | Fetch one of a workspace's workers (agents) by sid. |
-| `siprtc.delete_worker` ⚠️ | Delete one of a workspace's workers (agents) by sid. |
-| `siprtc.create_worker` ✏️ | Create a worker (agent) in a workspace. |
-| `siprtc.update_worker` ✏️ | Update a worker's name, routing attributes or status (friendly_name, attributes and status are required). |
-| `siprtc.set_worker_activity` ✏️ | Change an agent's live state (e.g. |
-| `siprtc.list_tasks`  | List tasks (calls, chats, . |
-| `siprtc.get_task`  | Fetch one task by sid (WT...), with its status, queue and attributes. |
-| `siprtc.create_task` ✏️ 💲 | Create a task: the workflow routes it to a queue and reserves an agent, who is alerted. |
-| `siprtc.update_task_status` ✏️ | Move a task on: complete, cancel or wrap it up, optionally with a reason and a disposition. |
-
-### Campaigns — `campaigns`
-
-| Tool | Does |
-| --- | --- |
-| `siprtc.list_campaigns`  | List campaigns, filterable by name, status, channel or dial type. |
-| `siprtc.create_campaign` ✏️ | Create a campaign as a draft. |
-| `siprtc.update_campaign` ✏️ | Change a campaign's settings. |
-| `siprtc.set_campaign_status` ✏️ 💲 | Start (running), pause, resume (running), finish or cancel a campaign. |
-| `siprtc.delete_campaign` ⚠️ | Delete a campaign. |
-| `siprtc.list_campaign_progress`  | Per-contact progress of one campaign (who was reached, pending or failed). |
-| `siprtc.list_contact_groups`  | List campaign contact lists (groups). |
-| `siprtc.create_contact_group` ✏️ | Create a campaign contact list (group). |
-| `siprtc.delete_contact_group` ⚠️ | Delete a campaign contact list (group). |
-| `siprtc.list_contacts`  | List campaign contacts, filterable by name, email, number or contact list (group_id). |
-| `siprtc.create_contact` ✏️ | Add a campaign contact and put it in contact lists (group ids). |
-| `siprtc.update_contact` ✏️ | Change a campaign contact. |
-| `siprtc.delete_contact` ⚠️ | Delete a campaign contact. |
-| `siprtc.list_campaign_templates`  | List message templates used by messaging campaigns. |
-| `siprtc.create_campaign_template` ✏️ | Create a campaign message template. |
-| `siprtc.delete_campaign_template` ⚠️ | Delete a campaign message template. |
-
-### Reports — `reports`
-
-| Tool | Does |
-| --- | --- |
-| `siprtc.run_report`  | Run a contact-centre report and return its rows. |
-| `siprtc.export_report` ✏️ | Start a CSV export of a report. |
-| `siprtc.list_report_exports`  | List generated report exports. |
-| `siprtc.get_report_export`  | Get a finished report export's download link (a short-lived signed URL). |
-| `siprtc.delete_report_export` ⚠️ | Delete a generated report export. |
-
-### Flows — `flows`
-
-| Tool | Does |
-| --- | --- |
-| `siprtc.list_flows`  | List the account's flows. |
-| `siprtc.get_flow`  | Fetch one flow, including its URL. |
-| `siprtc.get_flow_status`  | Show whether a flow's container is running (status, phase, replicas). |
-| `siprtc.create_flow` ✏️ | Create a flow; its container starts and the response carries the flow URL and secret. |
-| `siprtc.update_flow` ✏️ | Rename a flow, change its time zone or status callback, or attach it to an application. |
-| `siprtc.restart_flow` ✏️ | Start or restart a flow's container. |
-| `siprtc.stop_flow` ⚠️ | Stop a flow's container; calls and messages routed to it fail until it starts again. |
-| `siprtc.delete_flow` ⚠️ | Delete a flow, its container and its voice application. |
-
-### AI agents — `ai_agents`
-
-| Tool | Does |
-| --- | --- |
-| `siprtc.list_ai_agents`  | List AI agents. |
-| `siprtc.get_ai_agent`  | Fetch one AI agent, including its prompt, tools and runtime settings. |
-| `siprtc.create_ai_agent` ✏️ | Create an AI agent. |
-| `siprtc.update_ai_agent` ✏️ | Change an AI agent. |
-| `siprtc.delete_ai_agent` ⚠️ | Delete an AI agent. |
-| `siprtc.list_ai_agent_categories`  | List the categories an AI agent can have. |
-| `siprtc.list_ai_agent_sessions`  | List AI agent conversations (sessions), optionally for one agent. |
-| `siprtc.create_ai_agent_session` ✏️ | Open a chat session with an AI agent; then talk to it with siprtc.send_agent_message. |
-| `siprtc.get_ai_agent_session`  | Fetch one AI agent session. |
-| `siprtc.send_agent_message` ✏️ 💲 | Send a user message into an AI agent session and get the agent's reply (and any tool calls it made). |
-| `siprtc.list_ai_agent_session_messages`  | List the messages exchanged in an AI agent session. |
-| `siprtc.delete_ai_agent_session` ⚠️ | Delete an AI agent session and its messages. |
-| `siprtc.list_voices`  | List text-to-speech voices: the account's saved voices, or the full catalogue with catalog=true. |
-
-### Workforce management — `workforce`
-
-| Tool | Does |
-| --- | --- |
-| `siprtc.list_shift_templates`  | List shift templates (named working hours on given weekdays). |
-| `siprtc.create_shift_template` ✏️ | Create a shift template. |
-| `siprtc.delete_shift_template` ⚠️ | Delete a shift template. |
-| `siprtc.list_shift_assignments`  | List which agents are assigned to which shift templates. |
-| `siprtc.create_shift_assignment` ✏️ | Assign agents (Auth IDs) to a shift template from start_date (YYYY-MM-DD), optionally until end_date. |
-| `siprtc.delete_shift_assignment` ⚠️ | Remove a shift assignment. |
-| `siprtc.list_scheduled_shifts`  | List concrete scheduled shifts, filterable by agent, template, status and date range (YYYY-MM-DD). |
 
 <!-- tools:end -->
 

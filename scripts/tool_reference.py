@@ -23,19 +23,14 @@ TITLES = {
     "conferences": "Conferences",
     "recordings": "Recordings, transcripts and privacy",
     "messaging": "Messaging",
-    "channels": "Messaging channels and Meta",
+    "channels": "Messaging channels, Meta and carrier onboarding",
     "fax_email": "Fax and email",
     "phone_numbers": "Phone numbers",
     "sip": "SIP users and SIP domains",
+    "sip_trunking": "SIP trunking (BYOC)",
     "trunks": "Carrier trunks and rates",
     "applications": "Applications",
     "account": "Account",
-    "taskrouter": "TaskRouter (contact centre routing)",
-    "campaigns": "Campaigns",
-    "reports": "Reports",
-    "flows": "Flows",
-    "ai_agents": "AI agents",
-    "workforce": "Workforce management",
 }
 MARK = {"read": "", "write": "✏️", "destructive": "⚠️"}
 

@@ -27,14 +27,6 @@ BILLABLE = os.getenv("SIPRTC_E2E_BILLABLE") == "1"
 TODAY = date.today()
 
 
-async def workspace_sid(c) -> str:
-    if os.getenv("SIPRTC_E2E_WORKSPACE"):
-        return os.environ["SIPRTC_E2E_WORKSPACE"]
-    workspaces = items(await ok(c, "list_workspaces"), "Workspaces")
-    assert workspaces, "the account has no workspace"
-    return workspaces[0]["sid"]
-
-
 # --- account -------------------------------------------------------------------------------
 
 
@@ -54,6 +46,22 @@ async def test_account_reads_and_no_secrets():
         if first:
             got = await ok(c, "get_sub_account", tenant_auth_id=first[0]["auth_id"])
             assert find(got, "auth_id") == first[0]["auth_id"]
+
+
+async def test_account_settings_round_trip():
+    async with client() as c:
+        before = (await ok(c, "get_account_settings"))["settings"]
+        other = "fr" if before.get("language") != "fr" else "en"
+        try:
+            await ok(c, "update_account_settings", language=other)
+            after = (await ok(c, "get_account_settings"))["settings"]
+            assert after["language"] == other
+            assert {k: v for k, v in after.items() if k != "language"} == {
+                k: v for k, v in before.items() if k != "language"
+            }
+        finally:
+            await quietly(c, "update_account_settings", language=before.get("language") or "en")
+        assert (await ok(c, "get_account_settings"))["settings"]["language"] == before.get("language")
 
 
 async def test_client_token_lifecycle():
@@ -502,6 +510,22 @@ async def test_sms_channel_lifecycle_and_send():
         assert RUN not in str(await ok(c, "list_channel_connections", channel="sms"))
 
 
+async def test_meta_and_carrier_onboarding_reads():
+    async with client() as c:
+        auth = await ok(c, "get_meta_authorization_url")
+        assert auth["url"].startswith("https://") and auth["state"].startswith(os.environ["SIPRTC_AUTH_ID"])
+        pages = await ok(c, "list_meta_pages")
+        assert isinstance(pages, dict)
+        # Fake credentials: the carrier refuses them, which proves the route, auth and body shape
+        # without onboarding anything.
+        message = await refused(
+            c, "list_carrier_numbers", provider="plivo", account_id="MAE2EZDQ1ZJIYMDZKMMZ", secret="e2e-not-a-token"
+        )
+        assert "did not accept" in message
+        message = await refused(c, "onboard_carrier", provider="plivo", secret="x", countries=[])
+        assert "country" in message
+
+
 async def test_channel_connections():
     async with client() as c:
         await ok(c, "list_channel_connections")
@@ -526,174 +550,3 @@ async def test_fax_and_documents():
         await ok(c, "list_faxes")
         await ok(c, "list_received_faxes")
         await ok(c, "list_fax_documents")
-
-
-# --- contact centre ------------------------------------------------------------------------
-
-
-async def test_taskrouter_lifecycle():
-    async with client() as c:
-        ws = await workspace_sid(c)
-        assert (await ok(c, "get_workspace", workspace_sid=ws))["sid"] == ws
-
-        activity = await ok(
-            c, "create_activity", workspace_sid=ws, friendly_name=RUN, display_name=RUN, msteams_activity_name="Away"
-        )
-        activity_sid = find(activity, "sid")
-        assert activity_sid, activity
-        queue_sid = workflow_sid = worker_sid = None
-        try:
-            assert (await ok(c, "get_activity", workspace_sid=ws, sid=activity_sid))["sid"] == activity_sid
-
-            queue = await ok(
-                c, "create_task_queue", workspace_sid=ws, friendly_name=RUN, waiting_time=60, target_workers="1==1"
-            )
-            queue_sid = find(queue, "sid")
-            assert queue_sid, queue
-            await ok(
-                c, "update_task_queue", workspace_sid=ws, queue_sid=queue_sid, friendly_name=RUN + "x", waiting_time=120
-            )
-            assert (await ok(c, "get_task_queue", workspace_sid=ws, sid=queue_sid))["friendly_name"] == RUN + "x"
-
-            config = {"task_routing": {"filters": [], "default_filter": {"queue": queue_sid}}}
-            workflow = await ok(c, "create_workflow", workspace_sid=ws, friendly_name=RUN, configuration=config)
-            workflow_sid = find(workflow, "sid")
-            assert workflow_sid, workflow
-            assert (await ok(c, "get_workflow", workspace_sid=ws, sid=workflow_sid))["sid"] == workflow_sid
-
-            worker = await ok(c, "create_worker", workspace_sid=ws, friendly_name=RUN, attributes={"skills": ["mcp"]})
-            worker_sid = find(worker, "sid")
-            assert worker_sid, worker
-            await ok(
-                c,
-                "update_worker",
-                workspace_sid=ws,
-                worker_sid=worker_sid,
-                friendly_name=RUN + "x",
-                attributes={"skills": ["mcp", "e2e"]},
-            )
-            got = await ok(c, "get_worker", workspace_sid=ws, sid=worker_sid)
-            assert got["friendly_name"] == RUN + "x"
-            await ok(c, "set_worker_activity", workspace_sid=ws, worker_sid=worker_sid, activity_sid=activity_sid)
-
-            await ok(c, "list_task_channels", workspace_sid=ws)
-            tasks = items(await ok(c, "list_tasks", workspace_sid=ws, limit=2), "Tasks")
-            if tasks:
-                await ok(c, "get_task", workspace_sid=ws, task_sid=tasks[0]["sid"])
-        finally:
-            if worker_sid:
-                await ok(c, "delete_worker", workspace_sid=ws, sid=worker_sid)
-            if workflow_sid:
-                await ok(c, "delete_workflow", workspace_sid=ws, sid=workflow_sid)
-            if queue_sid:
-                await ok(c, "delete_task_queue", workspace_sid=ws, sid=queue_sid)
-            await ok(c, "delete_activity", workspace_sid=ws, sid=activity_sid)
-
-
-async def test_campaign_building_blocks():
-    async with client() as c:
-        group = await ok(c, "create_contact_group", name=RUN, description="mcp e2e")
-        group_id = find(group, "id")
-        assert group_id, group
-        contact_id = template_id = None
-        try:
-            contact = await ok(
-                c, "create_contact", number="+15559640199", group=[int(group_id)], firstname="Mcp", lastname=RUN
-            )
-            contact_id = find(contact, "id")
-            assert contact_id, contact
-            await ok(c, "update_contact", contact_id=int(contact_id), number="+15559640199", fields={"company": RUN})
-            listed = await ok(c, "list_contacts", group_id=int(group_id))
-            assert RUN in str(listed)
-
-            template = await ok(c, "create_campaign_template", type="sms", name=RUN, body="Hello {{firstname}}")
-            template_id = find(template, "id")
-            assert template_id, template
-            assert RUN in str(await ok(c, "list_campaign_templates"))
-            await ok(c, "list_campaigns")
-        finally:
-            if template_id:
-                await ok(c, "delete_campaign_template", template_id=int(template_id))
-            if contact_id:
-                await ok(c, "delete_contact", contact_id=int(contact_id))
-            await ok(c, "delete_contact_group", group_id=int(group_id))
-
-
-async def test_reports():
-    async with client() as c:
-        ws = await workspace_sid(c)
-        frm, to = str(TODAY - timedelta(days=7)), str(TODAY)
-        await ok(c, "run_report", report="AgentPerformance", from_date=frm, to_date=to, workspace_sid=ws)
-        await ok(c, "run_report", report="QueuePerformanceSummary", from_date=frm, to_date=to, workspace_sid=ws)
-        await ok(c, "list_report_exports")
-
-
-async def test_workforce_lifecycle():
-    async with client() as c:
-        template = await ok(
-            c,
-            "create_shift_template",
-            name=RUN,
-            tz="Asia/Kolkata",
-            start_time="09:00",
-            end_time="17:00",
-            days_of_week=[1, 2, 3, 4, 5],
-        )
-        template_id = find(template, "id", "_id", "shiftTemplateId")
-        assert template_id, template
-        try:
-            assert RUN in str(await ok(c, "list_shift_templates"))
-            await ok(c, "list_shift_assignments")
-            await ok(c, "list_scheduled_shifts", start_date=str(TODAY), end_date=str(TODAY + timedelta(days=7)))
-        finally:
-            await ok(c, "delete_shift_template", template_id=str(template_id))
-
-
-# --- flows and AI agents -------------------------------------------------------------------
-
-
-async def test_flow_lifecycle():
-    async with client() as c:
-        created = await ok(c, "create_flow", name=RUN, time_zone="UTC")
-        flow_id = find(created, "Sid", "sid", "flow_id", "id")
-        assert flow_id, created
-        assert "SecretToken" not in str(created) or True
-        try:
-            assert RUN in str(await ok(c, "get_flow", flow_id=flow_id))
-            await ok(c, "get_flow_status", flow_id=flow_id)
-            await ok(c, "update_flow", flow_id=flow_id, name=RUN + "x")
-            await ok(c, "stop_flow", flow_id=flow_id)
-            await ok(c, "restart_flow", flow_id=flow_id, action="start")
-        finally:
-            await ok(c, "delete_flow", flow_id=flow_id)
-
-
-async def test_ai_agent_lifecycle():
-    async with client() as c:
-        created = await ok(
-            c,
-            "create_ai_agent",
-            name=RUN,
-            system_prompt="You are a test agent. Answer in one short sentence.",
-            category="general",
-        )
-        agent_id = find(created, "id")
-        assert agent_id, created
-        try:
-            assert (await ok(c, "get_ai_agent", agent_id=agent_id))["name"] == RUN
-            await ok(c, "update_ai_agent", agent_id=agent_id, fields={"description": "mcp e2e"})
-            assert (await ok(c, "get_ai_agent", agent_id=agent_id))["description"] == "mcp e2e"
-            session = await ok(c, "create_ai_agent_session", agent_id=agent_id, title=RUN, ttl_seconds=300)
-            session_id = find(session, "id")
-            assert session_id, session
-            try:
-                assert (await ok(c, "get_ai_agent_session", session_id=session_id))["id"] == session_id
-                await ok(c, "list_ai_agent_sessions", agent_id=agent_id)
-                if os.getenv("SIPRTC_E2E_LLM") == "1":
-                    reply = await ok(c, "send_agent_message", session_id=session_id, content="Say hello.")
-                    assert find(reply, "assistant_message")
-                await ok(c, "list_ai_agent_session_messages", session_id=session_id)
-            finally:
-                await ok(c, "delete_ai_agent_session", session_id=session_id)
-        finally:
-            await ok(c, "delete_ai_agent", agent_id=agent_id)

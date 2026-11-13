@@ -19,15 +19,10 @@ TOOLSETS = (
     "fax_email",
     "phone_numbers",
     "sip",
+    "sip_trunking",
     "trunks",
     "applications",
     "account",
-    "taskrouter",
-    "campaigns",
-    "reports",
-    "flows",
-    "ai_agents",
-    "workforce",
 )
 
 # Deployments with different routes can override these paths. Paths are relative to
