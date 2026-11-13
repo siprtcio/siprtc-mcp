@@ -1,22 +1,66 @@
 [project]
 name = "siprtc-mcp"
-version = "0.1.0"
-description = "MCP server for Siprtc CPaaS APIs"
+version = "0.2.0"
+description = "MCP server for the SIPRTC CPaaS API: voice, messaging, numbers, SIP, contact centre and AI agents"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 keywords = ["mcp", "model-context-protocol", "cpaas", "voice", "sms", "siprtc", "llm-tools"]
 urls = { Homepage = "https://siprtc.io/mcp/", Source = "https://github.com/siprtcio/siprtc-mcp", Documentation = "https://siprtc.io/docs/" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: Apache Software License",
+]
 dependencies = [
-    "fastmcp>=3.2.3",
-    "httpx>=0.28.1",
-    "pydantic>=2.12.5",
+    "fastmcp>=4.1.8,<5",
+    "httpx>=0.28.1,<1",
+    "pydantic>=2.14,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.4,<10",
+    "pytest-asyncio>=1.0,<2",
+    "respx>=0.22,<1",
+    "ruff>=0.14,<1",
 ]
 
 [project.scripts]
 siprtc-mcp = "siprtc_mcp.server:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["siprtc_mcp"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["test_app"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "BLE"]
+ignore = [
+    "E501",  # long tool descriptions read better unwrapped
+    "S101",  # assert in tests
+    "S311",  # random jitter for retries is not cryptographic
+    "BLE001",  # broad except where an API answer may be anything
+    "UP045",  # keep `X | None` and Optional readable either way
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106", "S107", "S603", "S607"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = ["live: calls a real SIPRTC API (needs SIPRTC_* env); run with -m live"]
+addopts = "-m 'not live'"
