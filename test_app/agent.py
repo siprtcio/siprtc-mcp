@@ -59,7 +59,6 @@ def build_agent():
         "When asked to list resources, use these tools:\n"
         "- Sip users: tool_name='siprtc.list_sip_users'\n"
         "- Applications: tool_name='siprtc.list_applications'\n"
-        "- Domains: tool_name='siprtc.list_domains'\n"
         "- Phone numbers: tool_name='siprtc.list_phone_numbers'\n"
         "Use arguments={} unless the user specifies filters."
     )

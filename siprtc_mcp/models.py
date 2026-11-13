@@ -79,12 +79,12 @@ class CallRequest(BaseModel):
     )
     play: str | None = Field(
         default=None,
-        alias="Play",
+        alias="play",
         description="URL to an audio file to play after the call is answered.",
     )
     speak: str | None = Field(
         default=None,
-        alias="Speak",
+        alias="speak",
         description="Sentence to speak after the call is answered.",
     )
     send_digits: str | None = Field(
@@ -103,6 +103,57 @@ class CallRequest(BaseModel):
         description="Inline TinyML instructions to execute for the call.",
     )
 
+    caller_id: str | None = Field(
+        default=None,
+        alias="CallerId",
+        description="Caller ID to present, when it differs from From.",
+    )
+    fallback_url: str | None = Field(
+        default=None,
+        alias="FallbackUrl",
+        description="URL to fetch TinyML from if Url fails.",
+    )
+    fallback_method: Literal["GET", "POST"] | None = Field(
+        default=None,
+        alias="FallbackMethod",
+        description="HTTP verb for FallbackUrl.",
+    )
+    machine_detection: str | None = Field(
+        default=None,
+        alias="MachineDetection",
+        description="Answering machine detection: Enable or DetectMessageEnd.",
+    )
+    machine_detection_timeout: str | None = Field(
+        default=None,
+        alias="MachineDetectionTimeout",
+        description="Seconds to wait for answering machine detection.",
+    )
+    record_format: str | None = Field(
+        default=None,
+        alias="RecordFormat",
+        description="Recording format, e.g. mp3 or wav.",
+    )
+    recording_channels: Literal["mono", "dual"] | None = Field(
+        default=None,
+        alias="RecordingChannels",
+        description="Record mono or dual channel.",
+    )
+    recording_track: Literal["inbound", "outbound", "both"] | None = Field(
+        default=None,
+        alias="RecordingTrack",
+        description="Which audio track to record.",
+    )
+    sip_auth_username: str | None = Field(
+        default=None,
+        alias="SipAuthUsername",
+        description="Username for SIP digest auth when To is a sip: URI.",
+    )
+    sip_auth_password: str | None = Field(
+        default=None,
+        alias="SipAuthPassword",
+        description="Password for SIP digest auth when To is a sip: URI.",
+    )
+
 
 class MessageRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="allow")
@@ -119,7 +170,7 @@ class MessageRequest(BaseModel):
     from_number: str | None = Field(
         default=None,
         alias="From",
-        description="Sender ID or Siprtc phone number in E.164 format.",
+        description="A SIPRTC phone number you own (E.164) or a registered sender ID.",
     )
     status_callback: str | None = Field(
         default=None,

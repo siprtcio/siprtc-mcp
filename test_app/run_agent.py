@@ -7,8 +7,6 @@ def main() -> None:
     print(siprtc_tool("siprtc.list_sip_users", {}))
     print("\n== Applications ==")
     print(siprtc_tool("siprtc.list_applications", {}))
-    print("\n== Domains ==")
-    print(siprtc_tool("siprtc.list_domains", {}))
     print("\n== Phone Numbers ==")
     print(siprtc_tool("siprtc.list_phone_numbers", {}))
 
