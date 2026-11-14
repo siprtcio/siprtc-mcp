@@ -1,3 +1,6 @@
+# Local trial of the HTTP server with the Chainlit test app. Both ports are published on
+# 127.0.0.1 only. The MCP server gets no SIPRTC credentials of its own: the test app sends
+# them as a bearer token on every request (see test_app/agent.py), like any other client.
 services:
   siprtc-mcp:
     build:
@@ -9,10 +12,15 @@ services:
       MCP_HOST: 0.0.0.0
       MCP_PORT: 8000
       MCP_PATH: /mcp
-    env_file:
-      - ./test_app/.env
+      # The test app reaches the server as http://siprtc-mcp:8000.
+      MCP_ALLOWED_HOSTS: siprtc-mcp
+      # From your shell or a .env next to this file (test_app/.env does not reach this service).
+      SIPRTC_BASE_URL: ${SIPRTC_BASE_URL:-https://api.siprtc.io/v1}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
 
   test-app:
     build:
@@ -25,4 +33,4 @@ services:
     env_file:
       - ./test_app/.env
     ports:
-      - "8501:8501"
+      - "127.0.0.1:8501:8501"

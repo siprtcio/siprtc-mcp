@@ -11,7 +11,7 @@ from fastmcp import Client
 from siprtc_mcp.auth import SiprtcCredentialTokenVerifier, decode_bearer_token
 from siprtc_mcp.config import TOOLSETS, ConfigError, Settings, get_settings
 from siprtc_mcp.server import create_server
-from siprtc_mcp.toolset import COST_TOOLS, classify
+from siprtc_mcp.toolset import COST_TOOLS, SENSITIVE_TOOLS, classify
 
 from .conftest import BASE
 
@@ -34,7 +34,8 @@ async def test_every_tool_is_namespaced_described_and_annotated():
         assert hints is not None, name
         kind = classify(name.split(".", 1)[1])
         assert hints.read_only_hint == (kind == "read"), name
-        assert hints.destructive_hint == (kind == "destructive"), name
+        sensitive = name.split(".", 1)[1] in SENSITIVE_TOOLS
+        assert hints.destructive_hint == (kind == "destructive" or sensitive), name
 
 
 async def test_no_tool_takes_a_raw_endpoint_path():

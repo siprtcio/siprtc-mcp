@@ -14,7 +14,7 @@ speaks both stdio and Streamable HTTP.
 - **API reference:** https://siprtc.io/docs/
 - **About this server:** https://siprtc.io/mcp/
 
-> **Status: v0.2.0.** Covers the public CPaaS core that accepts an account's Auth ID and
+> **Status: v0.3.0.** Covers the public CPaaS core that accepts an account's Auth ID and
 > secret: voice, conferences, recordings and privacy controls, messaging, channels and
 > bring-your-own-carrier onboarding, fax and email, numbers, SIP users and domains, SIP
 > trunking, carrier trunks and rates, applications and the account. Contact-centre products
@@ -48,11 +48,14 @@ export MCP_TRANSPORT="http"
 export MCP_HOST="0.0.0.0"
 export MCP_PORT="8000"
 export MCP_PATH="/mcp"
+export MCP_ALLOWED_HOSTS="mcp.example.com"   # the host name clients use
 
 python -m siprtc_mcp
 ```
 
-`GET /healthz` answers `{"status": "ok", ...}` for load balancers and orchestrators.
+Bearer tokens carry the account secret, so serve the endpoint over TLS (a reverse proxy or
+load balancer in front of it) and never expose plain HTTP beyond localhost.
+`GET /healthz` answers `{"status": "ok"}` for load balancers and orchestrators.
 
 ## Connecting a client
 
@@ -100,17 +103,35 @@ money and reach real people, so it gives you several ways to narrow what a model
 - **Tool annotations.** Every tool carries the MCP hints `readOnlyHint`, `destructiveHint`
   and `idempotentHint`. Clients that honour them (Claude does) ask before running a
   destructive tool. Tools that are billed or contact people say so in their description.
+- **Sensitive tools ask first.** Tools that change where calls and messages go, who can sign
+  in or connect, money, or how recordings are kept (🔒 in the [tool reference](#tools)) are
+  marked destructive, so clients that honour the hints confirm them with the user.
 - **Read-only mode.** `SIPRTC_READ_ONLY=true` registers only the tools that read. Nothing
   can be created, changed, sent or deleted.
+- **Deny list.** `SIPRTC_DENY` removes tools by name or by category: `write`, `destructive`,
+  `cost` (billed or reaches people) or `sensitive`. For example `SIPRTC_DENY=cost,sensitive`
+  keeps routine reads and edits but nothing that spends money or reroutes traffic. A name that
+  matches no tool stops the server, so a typo cannot leave a tool enabled.
 - **Toolsets.** `SIPRTC_TOOLSETS=voice,messaging` loads only those groups. Fewer tools also
   means a model picks the right one more often. The groups are listed in the
   [tool reference](#tools).
 - **No arbitrary paths.** Tools build their own API paths; a model cannot point a tool at
   another endpoint. Path values are URL-encoded and kept to one path segment.
-- **Secrets stay out of the conversation.** Responses are scrubbed of fields such as
-  `auth_secret`, `password`, `auth_token`, `access_token`, `api_secret` before the model sees
-  them, and error messages are scrubbed the same way. The API secret itself is never
-  returned; `siprtc.get_api_credentials` shows only a hint.
+- **The account is never the model's choice.** Every path is built from the caller's own
+  Auth ID. Free-form `extra` fields may not name an account (`auth_id`, `AccountSid`,
+  `customer_id` and the like), and request models refuse fields they do not know.
+- **Secrets stay out of the conversation.** Any response field whose name contains `secret`,
+  `password`, `token`, `apikey` or `privatekey` (in any spelling) is masked before the model
+  sees it, in JSON and plain-text bodies and in error messages. The API secret itself is never
+  returned; `siprtc.get_api_credentials` shows only a hint. Only `create_client_token`
+  returns a secret on purpose: the token it just issued.
+- **Content is data, not instructions.** Message bodies, transcripts and contact details come
+  from other people. The server's instructions tell the model not to act on them, results are
+  capped (`SIPRTC_MAX_RESULT_BYTES`) and page sizes are limited to 100. For agents that read
+  inbound messages, prefer a read-only or `SIPRTC_DENY=sensitive,cost` deployment.
+- **Limits.** Tool calls are rate limited per account (`SIPRTC_RATE_LIMIT`), and API answers
+  larger than `SIPRTC_MAX_API_RESPONSE_BYTES` are not read. Cap connections, request rates and
+  idle timeouts at the reverse proxy in front of the HTTP server.
 - **Scoped credentials.** Prefer a sub-account or a dedicated test account for agents, so a
   retry loop cannot spend more than that account holds.
 
@@ -121,7 +142,7 @@ This reference is generated from the server (`python scripts/tool_reference.py`)
 
 <!-- tools:start -->
 
-159 tools in 12 toolsets. ✏️ changes something, ⚠️ deletes or ends something, 💲 is billed or reaches people.
+159 tools in 12 toolsets. ✏️ changes something, ⚠️ deletes or ends something, 💲 is billed or reaches people, 🔒 is sensitive (routing, credentials, users, money or recording settings; clients ask first).
 
 ### Voice calls — `voice`
 
@@ -130,10 +151,10 @@ This reference is generated from the server (`python scripts/tool_reference.py`)
 | `siprtc.make_call` ✏️ 💲 | Place an outbound voice call (billed). |
 | `siprtc.list_calls`  | List call detail records (CDRs). |
 | `siprtc.get_call`  | Fetch one call detail record (CDR) by call SID. |
-| `siprtc.update_call` ✏️ | Change a live call: redirect it to new TinyML (url or tinyml), end it with status='completed', or put it on hold / take it off hold. |
+| `siprtc.update_call` ⚠️ 🔒 | Change a live call: redirect it to new TinyML (url or tinyml), end it with status='completed', or put it on hold / take it off hold. |
 | `siprtc.hangup_call` ⚠️ | Hang up a ringing or in-progress call by call SID. |
-| `siprtc.start_call_recording` ✏️ | Start recording a live call. |
-| `siprtc.update_call_recording` ✏️ | Pause, resume (status in-progress) or stop a recording on a live call. |
+| `siprtc.start_call_recording` ✏️ 🔒 | Start recording a live call. |
+| `siprtc.update_call_recording` ✏️ 🔒 | Pause, resume (status in-progress) or stop a recording on a live call. |
 
 ### Conferences — `conferences`
 
@@ -141,10 +162,10 @@ This reference is generated from the server (`python scripts/tool_reference.py`)
 | --- | --- |
 | `siprtc.list_conferences`  | List conferences, optionally by status (init, in-progress, completed) or friendly name. |
 | `siprtc.get_conference`  | Fetch one conference by SID. |
-| `siprtc.update_conference` ✏️ | Update a conference. |
+| `siprtc.update_conference` ⚠️ | Update a conference. |
 | `siprtc.list_conference_participants`  | List the participants of a conference. |
 | `siprtc.get_conference_participant`  | Fetch one conference participant by call SID. |
-| `siprtc.update_conference_participant` ✏️ | Mute/unmute, hold/unhold a participant, or play an announcement to them. |
+| `siprtc.update_conference_participant` ✏️ 🔒 | Mute/unmute, hold/unhold a participant, or play an announcement to them. |
 | `siprtc.remove_conference_participant` ⚠️ | Remove a participant from a conference, hanging up their leg. |
 
 ### Recordings, transcripts and privacy — `recordings`
@@ -155,19 +176,19 @@ This reference is generated from the server (`python scripts/tool_reference.py`)
 | `siprtc.get_recording`  | Fetch a recording's metadata. |
 | `siprtc.delete_recording` ⚠️ | Permanently delete a recording's audio (a tombstone record stays). |
 | `siprtc.get_recording_settings`  | Show the account's recording, transcript-storage, encryption, retention and playback-access settings. |
-| `siprtc.update_recording_settings` ✏️ | Change recording settings. |
+| `siprtc.update_recording_settings` ✏️ 🔒 | Change recording settings. |
 | `siprtc.list_transcripts`  | List stored conversation transcripts (voice, webchat, whatsapp, ...). |
 | `siprtc.get_transcript`  | Fetch a transcript's metadata, or with include_content=true its text (needs playback rights; audited). |
 | `siprtc.delete_transcript` ⚠️ | Permanently delete a transcript. |
 | `siprtc.list_public_keys`  | List the RSA public keys registered for customer-key recording encryption. |
-| `siprtc.create_public_key` ✏️ | Register an RSA public key (PEM 'PUBLIC KEY', 2048-4096 bit) for customer-key recording encryption. |
+| `siprtc.create_public_key` ✏️ 🔒 | Register an RSA public key (PEM 'PUBLIC KEY', 2048-4096 bit) for customer-key recording encryption. |
 | `siprtc.get_public_key`  | Fetch one registered public key by SID (CR...). |
-| `siprtc.update_public_key` ✏️ | Rename a registered public key (the key itself cannot change). |
+| `siprtc.update_public_key` ✏️ 🔒 | Rename a registered public key (the key itself cannot change). |
 | `siprtc.delete_public_key` ⚠️ | Delete a registered public key. |
 | `siprtc.list_legal_holds`  | List legal holds, optionally only active or released ones. |
 | `siprtc.create_legal_hold` ✏️ | Put recordings/transcripts on legal hold so retention and deletes skip them. |
 | `siprtc.get_legal_hold`  | Fetch one legal hold by SID (LH...). |
-| `siprtc.release_legal_hold` ⚠️ | Release a legal hold (its scope cannot change). |
+| `siprtc.release_legal_hold` ⚠️ 🔒 | Release a legal hold (its scope cannot change). |
 | `siprtc.list_audit_events`  | List privacy audit events (e.g. |
 
 ### Messaging — `messaging`
@@ -187,9 +208,9 @@ This reference is generated from the server (`python scripts/tool_reference.py`)
 | --- | --- |
 | `siprtc.list_channel_connections`  | List connected messaging channels (sms providers, whatsapp, viber), optionally for one channel. |
 | `siprtc.get_channel_connection`  | Fetch one channel connection by id. |
-| `siprtc.connect_channel` ✏️ | Connect a messaging channel with your own provider credentials. |
-| `siprtc.update_channel_connection` ✏️ | Rename a channel connection, point it at another application, or change its countries. |
-| `siprtc.update_channel_credentials` ✏️ | Replace a channel connection's provider credentials (same keys as connect_channel). |
+| `siprtc.connect_channel` ✏️ 🔒 | Connect a messaging channel with your own provider credentials. |
+| `siprtc.update_channel_connection` ✏️ 🔒 | Rename a channel connection, point it at another application, or change its countries. |
+| `siprtc.update_channel_credentials` ✏️ 🔒 | Replace a channel connection's provider credentials (same keys as connect_channel). |
 | `siprtc.verify_channel_connection` ✏️ | Check a channel connection's credentials against the provider and report the result. |
 | `siprtc.disconnect_channel` ⚠️ | Disconnect (delete) a channel connection. |
 | `siprtc.get_meta_integration`  | Show the account's Facebook/Meta integration and its connected pages (404 when none is connected). |
@@ -198,8 +219,8 @@ This reference is generated from the server (`python scripts/tool_reference.py`)
 | `siprtc.remove_meta_page` ⚠️ | Stop using one Facebook page: messages to it no longer reach this account. |
 | `siprtc.remove_meta_user` ⚠️ | Remove one connected Facebook user and the pages that came with them. |
 | `siprtc.disconnect_meta_integration` ⚠️ | Disconnect the whole Facebook/Meta integration: every page and user. |
-| `siprtc.list_carrier_numbers`  | Check a Twilio, Plivo or Telnyx account's credentials and list its phone numbers, before moving them here with onboard_carrier. |
-| `siprtc.onboard_carrier` ✏️ | Bring your own carrier: connect a Twilio, Plivo or Telnyx account and route the chosen numbers (up to 100, from list_carrier_numbers) through SIPRTC. |
+| `siprtc.list_carrier_numbers` ✏️ | Check a Twilio, Plivo or Telnyx account's credentials and list its phone numbers, before moving them here with onboard_carrier. |
+| `siprtc.onboard_carrier` ✏️ 🔒 | Bring your own carrier: connect a Twilio, Plivo or Telnyx account and route the chosen numbers (up to 100, from list_carrier_numbers) through SIPRTC. |
 | `siprtc.send_messenger_message` ✏️ 💲 | Send a Facebook Messenger message from a connected page to a user (recipient_id is their page-scoped id). |
 
 ### Fax and email — `fax_email`
@@ -224,8 +245,8 @@ This reference is generated from the server (`python scripts/tool_reference.py`)
 | `siprtc.get_phone_number`  | Fetch one number on the account, with its rates, capability and application. |
 | `siprtc.buy_phone_number` ✏️ 💲 | Buy a number from the available list (billed: setup plus monthly charge; 402 when the balance is too low). |
 | `siprtc.release_phone_number` ⚠️ | Release a number from the account. |
-| `siprtc.associate_application_to_phone_number` ✏️ | Attach an application to a number (it then handles the number's inbound calls/messages), or detach it with associate=false. |
-| `siprtc.update_phone_number_routing` ✏️ | Set how a number's inbound traffic is routed in the contact centre: an AI agent (ai_enabled + ai_agent), an IVR, or a taskrouter workspace/workflow/task queue. |
+| `siprtc.associate_application_to_phone_number` ✏️ 🔒 | Attach an application to a number (it then handles the number's inbound calls/messages), or detach it with associate=false. |
+| `siprtc.update_phone_number_routing` ✏️ 🔒 | Set how a number's inbound traffic is routed in the contact centre: an AI agent (ai_enabled + ai_agent), an IVR, or a taskrouter workspace/workflow/task queue. |
 | `siprtc.check_caller_id`  | Check whether a number may be used as caller ID (From) on outbound calls. |
 | `siprtc.list_verified_phone_numbers`  | List outside numbers verified for use as caller ID (404 when there are none). |
 | `siprtc.get_verified_phone_number`  | Fetch one verified caller-ID number. |
@@ -237,15 +258,15 @@ This reference is generated from the server (`python scripts/tool_reference.py`)
 | --- | --- |
 | `siprtc.list_sip_users`  | List SIP users (endpoints), optionally filtered by name, SIP username or status. |
 | `siprtc.list_available_sip_users`  | List SIP users in a taskrouter workspace that are not yet bound to an agent (worker). |
-| `siprtc.create_sip_user` ✏️ | Create a SIP user. |
-| `siprtc.update_sip_user` ✏️ | Update a SIP user: its name and password (both required by the API), codecs, status or presence. |
+| `siprtc.create_sip_user` ✏️ 🔒 | Create a SIP user. |
+| `siprtc.update_sip_user` ✏️ 🔒 | Update a SIP user: its name and password (both required by the API), codecs, status or presence. |
 | `siprtc.delete_sip_user` ⚠️ | Delete a SIP user. |
-| `siprtc.associate_sip_user_application` ✏️ | Attach an application to a SIP user (it handles the user's outbound calls), or detach it with associate=false. |
+| `siprtc.associate_sip_user_application` ✏️ 🔒 | Attach an application to a SIP user (it handles the user's outbound calls), or detach it with associate=false. |
 | `siprtc.list_sip_domains`  | List SIP domains (where PBXs and SIP trunks send calls in). |
 | `siprtc.get_sip_domain`  | Fetch one SIP domain by numeric id. |
-| `siprtc.create_sip_domain` ✏️ | Create a SIP domain <domain_prefix>.sip.<platform>. |
-| `siprtc.update_sip_domain` ✏️ | Update a SIP domain's name, IP or user auth, or status. |
-| `siprtc.associate_sip_domain_application` ✏️ | Attach an application to a SIP domain (it handles calls arriving there), or detach it with associate=false. |
+| `siprtc.create_sip_domain` ✏️ 🔒 | Create a SIP domain <domain_prefix>.sip.<platform>. |
+| `siprtc.update_sip_domain` ✏️ 🔒 | Update a SIP domain's name, IP or user auth, or status. |
+| `siprtc.associate_sip_domain_application` ✏️ 🔒 | Attach an application to a SIP domain (it handles calls arriving there), or detach it with associate=false. |
 | `siprtc.delete_sip_domain` ⚠️ | Delete a SIP domain. |
 
 ### SIP trunking (BYOC) — `sip_trunking`
@@ -255,42 +276,42 @@ This reference is generated from the server (`python scripts/tool_reference.py`)
 | `siprtc.list_sip_trunks`  | List SIP trunks (bring-your-own-carrier). |
 | `siprtc.get_sip_trunk`  | Fetch one SIP trunk by trunk_id. |
 | `siprtc.create_sip_trunk` ✏️ | Create a SIP trunk. |
-| `siprtc.update_sip_trunk` ✏️ | Rename a SIP trunk, set it active or inactive, or turn call recording on it on or off. |
+| `siprtc.update_sip_trunk` ✏️ 🔒 | Rename a SIP trunk, set it active or inactive, or turn call recording on it on or off. |
 | `siprtc.delete_sip_trunk` ⚠️ | Delete a SIP trunk by trunk_id. |
 | `siprtc.list_sip_trunk_credential_lists`  | List SIP trunk credential lists (groups of username/password credentials). |
 | `siprtc.get_sip_trunk_credential_list`  | Fetch one credential list by its id. |
-| `siprtc.create_sip_trunk_credential_list` ✏️ | Create a credential list for SIP trunk authentication. |
-| `siprtc.update_sip_trunk_credential_list` ✏️ | Rename a credential list or set it active/inactive. |
+| `siprtc.create_sip_trunk_credential_list` ✏️ 🔒 | Create a credential list for SIP trunk authentication. |
+| `siprtc.update_sip_trunk_credential_list` ✏️ 🔒 | Rename a credential list or set it active/inactive. |
 | `siprtc.delete_sip_trunk_credential_list` ⚠️ | Delete a credential list by its id. |
 | `siprtc.list_sip_trunk_auth_credentials`  | List SIP trunk auth credentials (username/password pairs). |
 | `siprtc.get_sip_trunk_auth_credential`  | Fetch one auth credential by its id. |
-| `siprtc.create_sip_trunk_auth_credential` ✏️ | Create a username/password credential that a carrier or PBX uses to authenticate on a SIP trunk. |
-| `siprtc.update_sip_trunk_auth_credential` ✏️ | Update an auth credential. |
+| `siprtc.create_sip_trunk_auth_credential` ✏️ 🔒 | Create a username/password credential that a carrier or PBX uses to authenticate on a SIP trunk. |
+| `siprtc.update_sip_trunk_auth_credential` ✏️ 🔒 | Update an auth credential. |
 | `siprtc.delete_sip_trunk_auth_credential` ⚠️ | Delete an auth credential by its id. |
 | `siprtc.list_sip_trunk_ip_acls`  | List SIP trunk IP access control lists (groups of allowed source IPs/CIDRs). |
 | `siprtc.get_sip_trunk_ip_acl`  | Fetch one IP access control list by its id. |
-| `siprtc.create_sip_trunk_ip_acl` ✏️ | Create an IP access control list. |
-| `siprtc.update_sip_trunk_ip_acl` ✏️ | Rename an IP access control list. |
+| `siprtc.create_sip_trunk_ip_acl` ✏️ 🔒 | Create an IP access control list. |
+| `siprtc.update_sip_trunk_ip_acl` ✏️ 🔒 | Rename an IP access control list. |
 | `siprtc.delete_sip_trunk_ip_acl` ⚠️ | Delete an IP access control list by its id. |
 | `siprtc.list_sip_trunk_ip_addresses`  | List IP addresses (CIDRs) allowed on SIP trunks. |
 | `siprtc.get_sip_trunk_ip_address`  | Fetch one allowed IP address by its id. |
-| `siprtc.create_sip_trunk_ip_address` ✏️ | Allow a source IP address on SIP trunks and put it in the given IP access control lists (ip_acl_ids). |
-| `siprtc.update_sip_trunk_ip_address` ✏️ | Change an allowed IP address (cidr, a single IPv4 address). |
+| `siprtc.create_sip_trunk_ip_address` ✏️ 🔒 | Allow a source IP address on SIP trunks and put it in the given IP access control lists (ip_acl_ids). |
+| `siprtc.update_sip_trunk_ip_address` ✏️ 🔒 | Change an allowed IP address (cidr, a single IPv4 address). |
 | `siprtc.delete_sip_trunk_ip_address` ⚠️ | Delete an allowed IP address by its id. |
 | `siprtc.list_sip_trunk_termination_uris`  | List a trunk's termination URIs (the SIP domains your PBX sends calls to). |
 | `siprtc.get_sip_trunk_termination_uri`  | Fetch one termination URI of a trunk. |
-| `siprtc.create_sip_trunk_termination_uri` ✏️ | Give a trunk a termination URI: sip_domain is the domain name your PBX or carrier sends calls to. |
-| `siprtc.update_sip_trunk_termination_uri` ✏️ | Change a termination URI's sip_domain. |
+| `siprtc.create_sip_trunk_termination_uri` ✏️ 🔒 | Give a trunk a termination URI: sip_domain is the domain name your PBX or carrier sends calls to. |
+| `siprtc.update_sip_trunk_termination_uri` ✏️ 🔒 | Change a termination URI's sip_domain. |
 | `siprtc.delete_sip_trunk_termination_uri` ⚠️ | Delete a termination URI from a trunk. |
 | `siprtc.list_sip_trunk_origination_uris`  | List a trunk's origination URIs (where SIPRTC sends inbound calls for its numbers). |
 | `siprtc.get_sip_trunk_origination_uri`  | Fetch one origination URI of a trunk. |
-| `siprtc.create_sip_trunk_origination_uri` ✏️ | Add an origination URI to a trunk: sip_uri (e.g. |
-| `siprtc.update_sip_trunk_origination_uri` ✏️ | Change an origination URI's sip_uri or priority, or turn it on or off (enabled). |
+| `siprtc.create_sip_trunk_origination_uri` ✏️ 🔒 | Add an origination URI to a trunk: sip_uri (e.g. |
+| `siprtc.update_sip_trunk_origination_uri` ✏️ 🔒 | Change an origination URI's sip_uri or priority, or turn it on or off (enabled). |
 | `siprtc.delete_sip_trunk_origination_uri` ⚠️ | Delete an origination URI from a trunk. |
 | `siprtc.list_sip_trunk_phone_numbers`  | List the phone numbers routed over a trunk. |
 | `siprtc.get_sip_trunk_phone_number`  | Fetch one phone number on a trunk by its trunk_number_id (from list_sip_trunk_phone_numbers). |
-| `siprtc.add_sip_trunk_phone_numbers` ✏️ | Route numbers you own over a trunk: their inbound calls go to the trunk's origination URIs. |
-| `siprtc.update_sip_trunk_phone_number` ✏️ | Set a phone number on a trunk active or inactive. |
+| `siprtc.add_sip_trunk_phone_numbers` ✏️ 🔒 | Route numbers you own over a trunk: their inbound calls go to the trunk's origination URIs. |
+| `siprtc.update_sip_trunk_phone_number` ✏️ 🔒 | Set a phone number on a trunk active or inactive. |
 | `siprtc.remove_sip_trunk_phone_number` ⚠️ | Take a phone number off a trunk by its trunk_number_id. |
 
 ### Carrier trunks and rates — `trunks`
@@ -299,13 +320,13 @@ This reference is generated from the server (`python scripts/tool_reference.py`)
 | --- | --- |
 | `siprtc.list_termination_trunks`  | List outbound (termination) carrier trunks. |
 | `siprtc.get_termination_trunk`  | Fetch one outbound carrier trunk by id. |
-| `siprtc.create_termination_trunk` ✏️ | Add an outbound carrier trunk. |
-| `siprtc.update_termination_trunk` ✏️ | Replace an outbound carrier trunk's settings (name, primary_ip and supported_cc are required). |
+| `siprtc.create_termination_trunk` ✏️ 🔒 | Add an outbound carrier trunk. |
+| `siprtc.update_termination_trunk` ✏️ 🔒 | Replace an outbound carrier trunk's settings (name, primary_ip and supported_cc are required). |
 | `siprtc.delete_termination_trunk` ⚠️ | Delete an outbound carrier trunk. |
 | `siprtc.list_origination_trunks`  | List inbound (origination) trunks, and the SIP domain carriers send calls to (auth_domain). |
 | `siprtc.get_origination_trunk`  | Fetch one inbound trunk by id. |
-| `siprtc.create_origination_trunk` ✏️ | Add an inbound trunk: calls are accepted from the listed cidrs (IP or CIDR), or with a username (letters/digits) and password (8+ chars). |
-| `siprtc.update_origination_trunk` ✏️ | Replace an inbound trunk's settings (name is required). |
+| `siprtc.create_origination_trunk` ✏️ 🔒 | Add an inbound trunk: calls are accepted from the listed cidrs (IP or CIDR), or with a username (letters/digits) and password (8+ chars). |
+| `siprtc.update_origination_trunk` ✏️ 🔒 | Replace an inbound trunk's settings (name is required). |
 | `siprtc.delete_origination_trunk` ⚠️ | Delete an inbound trunk; its carrier's calls are refused. |
 | `siprtc.list_rates`  | List the outbound voice rates that apply to the account, optionally for one dial prefix. |
 
@@ -316,7 +337,7 @@ This reference is generated from the server (`python scripts/tool_reference.py`)
 | `siprtc.list_applications`  | List applications, optionally filtered by friendly name or status. |
 | `siprtc.get_application`  | Fetch one application by SID. |
 | `siprtc.create_application` ✏️ | Create an application: the webhooks SIPRTC calls for inbound voice (voice_url returns TinyML) and messages (sms_url). |
-| `siprtc.update_application` ✏️ | Update an application. |
+| `siprtc.update_application` ✏️ 🔒 | Update an application. |
 | `siprtc.delete_application` ⚠️ | Delete an application. |
 
 ### Account — `account`
@@ -325,36 +346,45 @@ This reference is generated from the server (`python scripts/tool_reference.py`)
 | --- | --- |
 | `siprtc.get_balance`  | Show the account's prepaid balance (USD). |
 | `siprtc.get_profile`  | Show the account owner's profile (name, email, phone, address). |
-| `siprtc.update_profile` ✏️ | Update the account owner's profile details. |
+| `siprtc.update_profile` ✏️ 🔒 | Update the account owner's profile details. |
 | `siprtc.get_account_settings`  | Show account settings: theme, language, email domains for fax-to-email, default fax number. |
-| `siprtc.update_account_settings` ✏️ | Change account settings: theme, language, the email domains and addresses used for fax-to-email and email-to-fax, and the default fax number. |
+| `siprtc.update_account_settings` ✏️ 🔒 | Change account settings: theme, language, the email domains and addresses used for fax-to-email and email-to-fax, and the default fax number. |
 | `siprtc.get_api_credentials`  | Show the account's API credentials status: the Auth ID and only a hint of each secret, with when it was last rotated. |
-| `siprtc.list_client_tokens`  | List client tokens issued for SDK / WebRTC clients. |
-| `siprtc.create_client_token` ✏️ | Issue a client token (valid 7 days) for an SDK or WebRTC client. |
-| `siprtc.delete_client_token` ⚠️ | Revoke a client token by id. |
+| `siprtc.list_client_tokens`  | List this account's client tokens for SDK / WebRTC clients: id, name, created and expiry times. |
+| `siprtc.create_client_token` ✏️ 🔒 | Issue a client token (valid 7 days) for an SDK or WebRTC client. |
+| `siprtc.delete_client_token` ⚠️ | Revoke one of this account's client tokens by id. |
 | `siprtc.list_sub_accounts`  | List the users under this account (agents, supervisors, members), filterable by name, email, type or status. |
 | `siprtc.get_sub_account`  | Fetch one user under this account by Auth ID. |
-| `siprtc.create_sub_account` ✏️ | Create a user under this account (e.g. |
-| `siprtc.set_sub_account_status` ✏️ | Disable (disabled=true) or re-enable a user under this account. |
+| `siprtc.create_sub_account` ✏️ 🔒 | Create a user under this account (e.g. |
+| `siprtc.set_sub_account_status` ✏️ 🔒 | Disable (disabled=true) or re-enable a user under this account. |
 | `siprtc.delete_sub_account` ⚠️ | Schedule a user under this account for deletion (removes their sign-in and data). |
 | `siprtc.get_customer_balance`  | Vendor accounts only: show a customer account's balance. |
-| `siprtc.recharge_customer_balance` ✏️ | Vendor accounts only: add credit to (or, with a negative amount, debit) a customer account's balance. |
+| `siprtc.recharge_customer_balance` ⚠️ 💲 🔒 | Vendor accounts only: add credit to (or, with a negative amount, debit) a customer account's balance. |
 | `siprtc.list_inventory_numbers`  | Vendor accounts only: list the vendor's phone number inventory. |
-| `siprtc.add_inventory_number` ✏️ | Vendor accounts only: add a number to the inventory customers can buy from. |
+| `siprtc.add_inventory_number` ✏️ 🔒 | Vendor accounts only: add a number to the inventory customers can buy from. |
 
 <!-- tools:end -->
 
 ## Authentication
 
-Credentials are resolved in this order:
-
-1. **Bearer token on the current HTTP request.** The token is the URL-safe base64 encoding
-   of `auth_id:auth_secret`. With `SIPRTC_VERIFY_BEARER=true` (the default) a new token is
-   checked against SIPRTC once and the answer cached for five minutes, so a wrong token is
-   refused when the client connects. One running server can act for whichever account made
-   the request.
-2. **Environment variables** `SIPRTC_AUTH_ID` and `SIPRTC_AUTH_SECRET`. The usual choice for
-   stdio, where the server belongs to one user.
+- **HTTP: a bearer token on every request, always.** The token is the URL-safe (or
+  standard) base64 encoding of `auth_id:auth_secret`. One running server acts for whichever
+  account made the request, and a request without a token is refused with 401; the HTTP
+  server never falls back to environment credentials.
+  - With `SIPRTC_VERIFY_BEARER=true` (the default) a new token is checked against SIPRTC once
+    and the answer cached for five minutes. Only an answer that proves the credentials lets
+    it in; while SIPRTC is unreachable or failing (429, 5xx), new tokens are refused rather
+    than trusted, and asked about again on the next attempt.
+  - Wrong secrets are throttled per client address (and per client address and Auth ID)
+    before SIPRTC is asked again, so the server cannot be used to guess secrets, and one
+    client's failures never lock out anyone else.
+  - When SIPRTC rejects the credentials during a tool call (a rotated secret), the cached
+    answer is dropped at once.
+  - Host and Origin headers are checked (DNS-rebinding protection). Loopback names and the
+    bound address are accepted; add public host names in `MCP_ALLOWED_HOSTS` and, for browser
+    clients, their origins in `MCP_ALLOWED_ORIGINS`.
+- **stdio: environment variables** `SIPRTC_AUTH_ID` and `SIPRTC_AUTH_SECRET`, where the server
+  belongs to one user.
 
 ## Configuration
 
@@ -367,13 +397,19 @@ Credentials are resolved in this order:
 | `SIPRTC_READ_ONLY` | `false` | Register read tools only. |
 | `SIPRTC_TOOLSETS` | all | Comma-separated toolsets to load, e.g. `voice,messaging`. |
 | `SIPRTC_TIMEOUT` | `30` | Seconds per API request (1-300). |
-| `SIPRTC_MAX_RETRIES` | `2` | Retries for reads on 429/502/503/504 and for any request that never reached the API (0-5). Writes are not retried after the API received them, so nothing is sent twice. |
+| `SIPRTC_MAX_RETRIES` | `2` | Retries for reads on 429/502/503/504, and for any request the API turned away with 429 or that never reached it (0-5). Other writes are not retried, so nothing is carried out twice. |
 | `SIPRTC_VERIFY_BEARER` | `true` | Check HTTP bearer tokens against SIPRTC before accepting them. |
-| `SIPRTC_LOG_LEVEL` | `INFO` | Log level. Logs go to stderr and never include secrets or request bodies. |
+| `SIPRTC_DENY` | — | Comma-separated tool names and categories (`write`, `destructive`, `cost`, `sensitive`) to leave out. |
+| `SIPRTC_RATE_LIMIT` | `10` | Tool calls per second per account (bursts of three times that). |
+| `SIPRTC_MAX_RESULT_BYTES` | `1000000` | Largest tool result handed to the model, counting both its text and structured copies; longer results are truncated with a note. |
+| `SIPRTC_MAX_API_RESPONSE_BYTES` | `5000000` | Largest API answer read; a bigger one is refused with advice to narrow the query. |
+| `SIPRTC_LOG_LEVEL` | `INFO` | Log level. Logs go to stderr and show routes, not filled-in paths, so ids, numbers and emails stay out of them; never secrets or request bodies. |
 | `MCP_TRANSPORT` | `stdio` | `stdio` or `http` |
 | `MCP_HOST` | `127.0.0.1` | Bind address, HTTP transport only |
 | `MCP_PORT` | `8000` | Port, HTTP transport only |
 | `MCP_PATH` | `/mcp` | Endpoint path, HTTP transport only |
+| `MCP_ALLOWED_HOSTS` | — | Extra `Host` names to accept (comma-separated), e.g. the public name behind your proxy. |
+| `MCP_ALLOWED_ORIGINS` | — | Browser origins allowed to call the endpoint. Leave empty unless a web page calls it. |
 
 A bad value stops the server at start-up with a message naming the variable.
 
@@ -391,22 +427,25 @@ and the resource's own placeholders.
 
 ## Docker
 
-The image builds a wheel, installs it into a slim Python 3.13 image, runs as an
-unprivileged user, defaults to the HTTP transport and has a health check.
+The image installs the hash-locked dependencies (`requirements.txt`) and the server into
+a virtualenv on a digest-pinned Python 3.13 slim base, runs as an unprivileged user, works
+with a read-only root filesystem, defaults to the HTTP transport and has a health check.
 
 ```bash
 docker build -t siprtc-mcp:latest .
 
-docker run --rm -p 8000:8000 siprtc-mcp:latest
+docker run --rm --read-only --cap-drop ALL -p 127.0.0.1:8000:8000 \
+  -e MCP_ALLOWED_HOSTS=mcp.example.com siprtc-mcp:latest
 ```
 
-Clients then send their own bearer token. For a single-account deployment, pass
-`-e SIPRTC_AUTH_ID=... -e SIPRTC_AUTH_SECRET=...` instead.
+Clients send their own bearer token; the container needs no SIPRTC credentials. Put a
+TLS-terminating proxy in front of it for anything beyond localhost.
 
 ### Compose — server plus test UI
 
-With a `test_app/.env` containing `SIPRTC_AUTH_ID`, `SIPRTC_AUTH_SECRET` and
-`OPENAI_API_KEY`:
+For local trials only: both ports are published on 127.0.0.1, and the MCP server gets no
+credentials of its own; the test app sends them as a bearer token. With a `test_app/.env`
+containing `SIPRTC_AUTH_ID`, `SIPRTC_AUTH_SECRET` and `OPENAI_API_KEY`:
 
 ```bash
 docker compose up --build -d
@@ -449,7 +488,19 @@ reach simulators or numbers you own: `SIPRTC_E2E_CALL_FROM`, `SIPRTC_E2E_CALL_TO
 channel to connect.
 
 After adding or renaming a tool, regenerate the reference above with
-`python scripts/tool_reference.py` (CI fails if it is stale).
+`python scripts/tool_reference.py` (CI fails if it is stale). A new tool that changes routing,
+credentials, users, money or recording settings belongs in `SENSITIVE_TOOLS` in
+`siprtc_mcp/toolset.py`; one that is billed belongs in `COST_TOOLS`.
+
+`requirements.txt` pins the runtime dependencies, with hashes, to the versions the tests ran
+against; the Docker image installs only from it, and CI audits it with `pip-audit`. After
+changing dependencies, regenerate it from a tested environment:
+
+```bash
+pip freeze --exclude-editable > /tmp/tested.txt
+uv pip compile pyproject.toml --python-version 3.13 --python-platform linux \
+  --generate-hashes --no-header --no-annotate -c /tmp/tested.txt -o requirements.txt
+```
 
 ## Billing
 

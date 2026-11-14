@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class CallRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     application_sid: str | None = Field(
         default=None,
@@ -156,7 +156,7 @@ class CallRequest(BaseModel):
 
 
 class MessageRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     to: str = Field(
         alias="To",

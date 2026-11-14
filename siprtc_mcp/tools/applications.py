@@ -7,7 +7,7 @@ from typing import Any, Literal
 from fastmcp.exceptions import ToolError
 
 from ..config import application_path, applications_path
-from ._common import api
+from ._common import api, checked_extra
 
 Method = Literal["GET", "POST"]
 
@@ -24,7 +24,7 @@ def _fields(
     sms_status_callback: str | None,
     extra: dict | None,
 ) -> dict:
-    body = dict(extra or {})
+    body = checked_extra(extra)
     body.update(
         {
             key: value

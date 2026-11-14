@@ -9,6 +9,8 @@ from fastmcp.exceptions import ToolError
 from ._common import ACCOUNT, api
 
 TENANTS = ACCOUNT + "/Tenants"
+TOKEN_PAGE_SIZE = 100
+MAX_TOKEN_PAGES = 200
 TENANT = TENANTS + "/{tenant_auth_id}"
 
 
@@ -120,25 +122,54 @@ def register(mcp, client_factory):
     def get_api_credentials() -> Any:
         return api(client_factory, "GET", ACCOUNT + "/ApiCredentials")
 
-    @mcp.tool(name="siprtc.list_client_tokens", description="List client tokens issued for SDK / WebRTC clients.")
-    def list_client_tokens(page: int | None = None, limit: int | None = None) -> Any:
-        return api(
-            client_factory,
-            "GET",
-            ACCOUNT + "/ClientToken",
-            params={"page": page, "limit": limit},
-            empty_as="client_tokens",
-        )
+    def own_client_tokens() -> tuple[list[dict], bool]:
+        # The API's list is not scoped to the caller: it pages through every account's tokens.
+        # Walk all of it and keep this account's rows (rows without an auth_id are dropped, not
+        # trusted). Returns the rows and whether the whole list was read.
+        me = client_factory().auth_id
+        mine: list[dict] = []
+        for page in range(1, MAX_TOKEN_PAGES + 1):
+            found = api(
+                client_factory,
+                "GET",
+                ACCOUNT + "/ClientToken",
+                params={"page": page, "limit": TOKEN_PAGE_SIZE},
+                empty_as="data",
+            )
+            rows = found.get("data") if isinstance(found, dict) else None
+            rows = rows or []
+            mine.extend(row for row in rows if isinstance(row, dict) and row.get("auth_id") == me)
+            if len(rows) < TOKEN_PAGE_SIZE:
+                return mine, True
+        return mine, False
+
+    @mcp.tool(
+        name="siprtc.list_client_tokens",
+        description=(
+            "List this account's client tokens for SDK / WebRTC clients: id, name, created and expiry "
+            "times. Token values are never shown; issue a new one with create_client_token."
+        ),
+    )
+    def list_client_tokens() -> Any:
+        rows, complete = own_client_tokens()
+        result: dict[str, Any] = {"data": rows, "count": len(rows)}
+        if not complete:
+            result["note"] = f"Only the first {MAX_TOKEN_PAGES * TOKEN_PAGE_SIZE} tokens on the platform were checked."
+        return result
 
     @mcp.tool(
         name="siprtc.create_client_token",
         description="Issue a client token (valid 7 days) for an SDK or WebRTC client. The response holds the token itself.",
     )
     def create_client_token(name: str) -> Any:
-        return api(client_factory, "POST", ACCOUNT + "/ClientToken", json={"name": name})
+        return api(client_factory, "POST", ACCOUNT + "/ClientToken", json={"name": name}, keep=("token",))
 
-    @mcp.tool(name="siprtc.delete_client_token", description="Revoke a client token by id.")
+    @mcp.tool(name="siprtc.delete_client_token", description="Revoke one of this account's client tokens by id.")
     def delete_client_token(client_id: str) -> Any:
+        # The API deletes by id without checking the owner, so confirm the token is ours first.
+        rows, _ = own_client_tokens()
+        if not any(row.get("id") == client_id for row in rows):
+            raise ToolError(f"No client token {client_id} on this account.")
         return api(client_factory, "DELETE", ACCOUNT + "/ClientToken/{client_id}", client_id=client_id)
 
     # --- sub-accounts (users under this account: agents, supervisors, members) ---------------

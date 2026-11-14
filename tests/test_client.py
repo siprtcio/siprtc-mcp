@@ -117,11 +117,13 @@ def test_redirects_are_not_followed():
 def test_responses_are_redacted():
     respx.get(f"{BASE}/x").mock(
         return_value=httpx.Response(
-            200, json={"data": [{"name": "a", "password": "p", "Auth_Secret": "s", "token": "keep"}]}
+            200,
+            json={"data": [{"name": "a", "password": "p", "Auth_Secret": "s", "token": "t", "token_type": "x"}]},
         )
     )
     row = make().request("GET", "/x")["data"][0]
-    assert row["password"] == REDACTED and row["Auth_Secret"] == REDACTED and row["token"] == "keep"
+    assert row["password"] == REDACTED and row["Auth_Secret"] == REDACTED and row["token"] == REDACTED
+    assert row["name"] == "a" and row["token_type"] == "x"
 
 
 def test_redact_leaves_empty_values_alone():
