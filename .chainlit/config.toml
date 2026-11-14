@@ -8,7 +8,7 @@ user_session_timeout = 1296000
 cache = false
 persist_user_env = false
 mask_user_env = false
-allow_origins = ["*"]
+allow_origins = ["http://localhost:8501", "http://127.0.0.1:8501"]
 
 [features]
 unsafe_allow_html = false

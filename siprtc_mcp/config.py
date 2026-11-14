@@ -79,6 +79,15 @@ def _number(name: str, default: float, *, minimum: float, maximum: float) -> flo
     return number
 
 
+def _list(name: str) -> list[str]:
+    return [part.strip() for part in os.getenv(name, "").split(",") if part.strip()]
+
+
+# SIPRTC_DENY accepts tool names and these categories (see toolset.py).
+DENY_CATEGORIES = frozenset({"write", "destructive", "cost", "sensitive"})
+DENY_CATEGORIES_ALIASES = {"billable": "cost", "billed": "cost", "writes": "write"}
+
+
 @dataclass(frozen=True)
 class Settings:
     base_url: str
@@ -92,6 +101,12 @@ class Settings:
     port: int
     path: str
     log_level: str
+    allowed_hosts: tuple[str, ...] = ()
+    allowed_origins: tuple[str, ...] = ()
+    rate_limit: float = 10.0
+    max_result_bytes: int = 1_000_000
+    max_api_response_bytes: int = 5_000_000
+    deny: frozenset[str] = frozenset()
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -124,6 +139,12 @@ class Settings:
         if not path.startswith("/"):
             path = "/" + path
 
+        # Tool names (with or without the siprtc. prefix) and categories; the server rejects names
+        # that match no tool, so a typo cannot silently leave a tool enabled.
+        deny = frozenset(
+            DENY_CATEGORIES_ALIASES.get(part.lower(), part.removeprefix("siprtc.")) for part in _list("SIPRTC_DENY")
+        )
+
         return cls(
             base_url=base_url,
             timeout=_number("SIPRTC_TIMEOUT", 30.0, minimum=1, maximum=300),
@@ -136,6 +157,14 @@ class Settings:
             port=int(_number("MCP_PORT", 8000, minimum=1, maximum=65535)),
             path=path,
             log_level=os.getenv("SIPRTC_LOG_LEVEL", "INFO").strip().upper(),
+            allowed_hosts=tuple(_list("MCP_ALLOWED_HOSTS")),
+            allowed_origins=tuple(_list("MCP_ALLOWED_ORIGINS")),
+            rate_limit=_number("SIPRTC_RATE_LIMIT", 10.0, minimum=0.1, maximum=1000),
+            max_result_bytes=int(_number("SIPRTC_MAX_RESULT_BYTES", 1_000_000, minimum=10_000, maximum=50_000_000)),
+            max_api_response_bytes=int(
+                _number("SIPRTC_MAX_API_RESPONSE_BYTES", 5_000_000, minimum=100_000, maximum=100_000_000)
+            ),
+            deny=deny,
         )
 
 

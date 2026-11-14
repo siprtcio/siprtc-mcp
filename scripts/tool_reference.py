@@ -42,20 +42,23 @@ async def render() -> str:
     for tool in tools:
         tags = set((tool.meta or {}).get("fastmcp", {}).get("tags", []))
         group = next(g for g in TOOLSETS if g in tags)
-        kind = next(k for k in ("read", "write", "destructive") if k in tags)
-        groups[group].append((tool.name, kind, tool.description.split(" This is billed")[0]))
+        kind = "destructive" if "destructive" in tags else "write" if "write" in tags else "read"
+        cats = {c for c in ("cost", "sensitive") if c in tags}
+        text = tool.description.split(" This is billed")[0].split(" Sensitive:")[0]
+        groups[group].append((tool.name, kind, cats, text))
     lines = [
         START,
         "",
-        f"{len(tools)} tools in {len(TOOLSETS)} toolsets. ✏️ changes something, ⚠️ deletes or ends something, 💲 is billed or reaches people.",
+        f"{len(tools)} tools in {len(TOOLSETS)} toolsets. ✏️ changes something, ⚠️ deletes or ends something, 💲 is billed or reaches people, "
+        "🔒 is sensitive (routing, credentials, users, money or recording settings; clients ask first).",
         "",
     ]
     for group, rows in groups.items():
         lines += [f"### {TITLES[group]} — `{group}`", "", "| Tool | Does |", "| --- | --- |"]
-        for name, kind, text in rows:
-            billed = " 💲" if "billed to the account" in next(t.description for t in tools if t.name == name) else ""
+        for name, kind, cats, text in rows:
+            marks = MARK[kind] + (" 💲" if "cost" in cats else "") + (" 🔒" if "sensitive" in cats else "")
             first = text.split(". ")[0].rstrip(".") + "."
-            lines.append(f"| `{name}` {MARK[kind]}{billed} | {first.replace('|', '/')} |")
+            lines.append(f"| `{name}` {marks} | {first.replace('|', '/')} |")
         lines.append("")
     lines.append(END)
     return "\n".join(lines)
