@@ -5,7 +5,7 @@
 # The base image is pinned by digest (python:3.13-slim, multi-arch index) and the dependencies
 # by hash (requirements.txt, requirements-build.txt). Dependabot proposes updates to the
 # digest and the pins; regenerate the hashes as the README describes.
-FROM python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90 AS build
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS build
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /src
 COPY requirements.txt requirements-build.txt ./
@@ -17,7 +17,7 @@ COPY siprtc_mcp ./siprtc_mcp
 RUN python -m build --wheel --no-isolation --outdir /dist \
     && /opt/venv/bin/pip install --no-deps /dist/*.whl
 
-FROM python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH=/opt/venv/bin:$PATH \
