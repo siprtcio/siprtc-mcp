@@ -1,5 +1,5 @@
 deepagents>=0.4.10
-langchain-openai>=0.1.25
+langchain-openai>=1.7.4
 python-dotenv>=1.0.1
 fastmcp>=3.0.0
-chainlit>=1.1.305
+chainlit>=2.12.0
